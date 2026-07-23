@@ -58,8 +58,8 @@ export const navigationItems: readonly NavigationItem[] = [
     key: 'questions',
     path: '/questions',
     label: '题库管理',
-    allowedRoles: ['teacher'],
-    description: '题库管理将在后续轮次实现',
+    allowedRoles: ['admin', 'teacher'],
+    description: '维护单选题、多选题和判断题',
   },
   {
     key: 'papers',

@@ -89,7 +89,7 @@ try {
   await page.waitForFunction(() => window.location.pathname === '/dashboard')
   results.refreshRestore = currentUserRequestCount > requestCountBeforeRefresh
 
-  await page.goto(`${frontendUrl}/questions`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${frontendUrl}/my-exams`, { waitUntil: 'domcontentloaded' })
   await page.waitForFunction(() => window.location.pathname === '/403')
   results.forbidden = documentPath(page.url()) === '/403'
 

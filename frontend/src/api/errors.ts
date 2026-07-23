@@ -2,6 +2,23 @@ import axios from 'axios'
 
 import type { ApiErrorResponse } from '../types/auth'
 
+interface ValidationErrorItem {
+  msg?: unknown
+}
+
+function getValidationMessage(detail: unknown): string | null {
+  if (!Array.isArray(detail)) {
+    return null
+  }
+
+  const firstItem = detail[0] as ValidationErrorItem | undefined
+  if (typeof firstItem?.msg !== 'string' || firstItem.msg.trim() === '') {
+    return null
+  }
+
+  return firstItem.msg.replace(/^Value error,\s*/u, '')
+}
+
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (!axios.isAxiosError<ApiErrorResponse>(error)) {
     return fallback
@@ -27,6 +44,11 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
     detail.trim() !== ''
   ) {
     return detail
+  }
+
+  const validationMessage = getValidationMessage(detail)
+  if (error.response.status === 422 && validationMessage !== null) {
+    return validationMessage
   }
 
   return fallback
