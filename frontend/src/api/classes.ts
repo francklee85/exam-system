@@ -38,3 +38,20 @@ export async function updateClassStatus(
   })
   return response.data
 }
+
+export async function listAllClasses(
+  filters: Omit<ClassListParams, 'page' | 'page_size'> = {},
+): Promise<ClassInfo[]> {
+  const pageSize = 100
+  let page = 1
+  const classes: ClassInfo[] = []
+
+  while (true) {
+    const response = await listClasses({ ...filters, page, page_size: pageSize })
+    classes.push(...response.items)
+    if (classes.length >= response.total || response.items.length === 0) {
+      return classes
+    }
+    page += 1
+  }
+}

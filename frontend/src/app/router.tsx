@@ -11,10 +11,16 @@ import { ForbiddenPage } from '../pages/ForbiddenPage'
 import { LoginPage } from '../pages/LoginPage'
 import { MajorsPage } from '../pages/MajorsPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
+import { StudentsPage } from '../pages/StudentsPage'
+import { TeachersPage } from '../pages/TeachersPage'
+import { UsersPage } from '../pages/UsersPage'
 import { navigationItems } from './navigation'
 
 const placeholderRoutes = navigationItems
-  .filter((item) => !['dashboard', 'majors', 'classes'].includes(item.key))
+  .filter(
+    (item) =>
+      !['dashboard', 'users', 'teachers', 'students', 'majors', 'classes'].includes(item.key),
+  )
   .map((item) => ({
     path: item.path,
     element: (
@@ -52,6 +58,30 @@ export const router = createBrowserRouter([
             element: (
               <RoleRoute allowedRoles={['admin']}>
                 <MajorsPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/users',
+            element: (
+              <RoleRoute allowedRoles={['admin']}>
+                <UsersPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/teachers',
+            element: (
+              <RoleRoute allowedRoles={['admin']}>
+                <TeachersPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/students',
+            element: (
+              <RoleRoute allowedRoles={['admin']}>
+                <StudentsPage />
               </RoleRoute>
             ),
           },

@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:e2e": "node scripts/browser-smoke.mjs",
     "test:e2e:organization": "node scripts/organization-browser-smoke.mjs",
+    "test:e2e:user-management": "node scripts/user-management-browser-smoke.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
