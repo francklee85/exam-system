@@ -45,14 +45,14 @@ export const navigationItems: readonly NavigationItem[] = [
     path: '/majors',
     label: '专业管理',
     allowedRoles: ['admin'],
-    description: '专业管理页面将在后续轮次实现',
+    description: '维护专业基础信息',
   },
   {
     key: 'classes',
     path: '/classes',
     label: '班级管理',
     allowedRoles: ['admin'],
-    description: '班级管理页面将在后续轮次实现',
+    description: '维护班级及专业归属',
   },
   {
     key: 'questions',

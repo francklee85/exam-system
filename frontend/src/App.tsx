@@ -1,4 +1,4 @@
-import { ConfigProvider } from 'antd'
+import { App as AntdApp, ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import { useEffect } from 'react'
 import { RouterProvider } from 'react-router-dom'
@@ -27,7 +27,9 @@ export function App() {
         },
       }}
     >
-      {isLoading || !hasInitialized ? <FullPageLoading /> : <RouterProvider router={router} />}
+      <AntdApp>
+        {isLoading || !hasInitialized ? <FullPageLoading /> : <RouterProvider router={router} />}
+      </AntdApp>
     </ConfigProvider>
   )
 }

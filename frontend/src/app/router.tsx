@@ -5,14 +5,16 @@ import { PublicOnlyRoute } from '../components/PublicOnlyRoute'
 import { RoleRoute } from '../components/RoleRoute'
 import { AppLayout } from '../layouts/AppLayout'
 import { ComingSoonPage } from '../pages/ComingSoonPage'
+import { ClassesPage } from '../pages/ClassesPage'
 import { DashboardPage } from '../pages/DashboardPage'
 import { ForbiddenPage } from '../pages/ForbiddenPage'
 import { LoginPage } from '../pages/LoginPage'
+import { MajorsPage } from '../pages/MajorsPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
 import { navigationItems } from './navigation'
 
 const placeholderRoutes = navigationItems
-  .filter((item) => item.key !== 'dashboard')
+  .filter((item) => !['dashboard', 'majors', 'classes'].includes(item.key))
   .map((item) => ({
     path: item.path,
     element: (
@@ -44,6 +46,22 @@ export const router = createBrowserRouter([
           {
             path: '/dashboard',
             element: <DashboardPage />,
+          },
+          {
+            path: '/majors',
+            element: (
+              <RoleRoute allowedRoles={['admin']}>
+                <MajorsPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/classes',
+            element: (
+              <RoleRoute allowedRoles={['admin']}>
+                <ClassesPage />
+              </RoleRoute>
+            ),
           },
           ...placeholderRoutes,
         ],

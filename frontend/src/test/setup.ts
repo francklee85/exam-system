@@ -20,3 +20,24 @@ Object.defineProperty(window, 'matchMedia', {
     dispatchEvent: () => false,
   }),
 })
+
+class ResizeObserverMock {
+  observe(): void {}
+
+  unobserve(): void {}
+
+  disconnect(): void {}
+}
+
+Object.defineProperty(globalThis, 'ResizeObserver', {
+  writable: true,
+  value: ResizeObserverMock,
+})
+
+Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+  writable: true,
+  value: () => undefined,
+})
+
+const originalGetComputedStyle = window.getComputedStyle.bind(window)
+window.getComputedStyle = (element: Element) => originalGetComputedStyle(element)
