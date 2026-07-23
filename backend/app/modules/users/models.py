@@ -11,6 +11,7 @@ from app.db.enums import RecordStatus, record_status_type
 from app.db.mixins import TimestampMixin
 
 if TYPE_CHECKING:
+    from app.modules.questions.models import Question
     from app.modules.roles.models import Role, UserRole
     from app.modules.students.models import StudentProfile
 
@@ -45,3 +46,4 @@ class User(TimestampMixin, Base):
         single_parent=True,
         uselist=False,
     )
+    created_questions: Mapped[list[Question]] = relationship(back_populates="creator")

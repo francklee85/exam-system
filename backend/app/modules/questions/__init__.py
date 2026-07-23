@@ -1,1 +1,1 @@
-"""Question module placeholder."""
+"""Question bank models, schemas, and services."""
