@@ -9,3 +9,8 @@ class ResourceNotFoundError(HTTPException):
 class ResourceConflictError(HTTPException):
     def __init__(self, detail: str) -> None:
         super().__init__(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
+class SystemConfigurationError(HTTPException):
+    def __init__(self, detail: str) -> None:
+        super().__init__(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
