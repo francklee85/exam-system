@@ -1,0 +1,3 @@
+Alembic migration environment for the online exam system.
+
+Business schema revisions are intentionally not included in the initial skeleton.

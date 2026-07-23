@@ -1,0 +1,1 @@
+"""Exam attempt module placeholder."""
