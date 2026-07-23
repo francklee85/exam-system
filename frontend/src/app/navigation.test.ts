@@ -7,7 +7,7 @@ function menuKeysFor(roles: Parameters<typeof getNavigationItems>[0]): string[] 
 }
 
 describe('role navigation', () => {
-  it('shows admin management and the shared question menu', () => {
+  it('shows admin management plus shared question and paper menus', () => {
     expect(menuKeysFor(['admin'])).toEqual([
       'dashboard',
       'users',
@@ -16,6 +16,7 @@ describe('role navigation', () => {
       'majors',
       'classes',
       'questions',
+      'papers',
     ])
   })
 

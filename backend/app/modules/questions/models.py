@@ -25,6 +25,7 @@ from app.modules.questions.enums import (
 )
 
 if TYPE_CHECKING:
+    from app.modules.papers.models import PaperQuestion
     from app.modules.users.models import User
 
 
@@ -66,6 +67,9 @@ class Question(TimestampMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="QuestionOption.sort_order",
+    )
+    paper_assignments: Mapped[list[PaperQuestion]] = relationship(
+        back_populates="question",
     )
 
 

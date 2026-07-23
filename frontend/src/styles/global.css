@@ -382,6 +382,98 @@ input {
   justify-content: flex-end;
 }
 
+.paper-name-link {
+  height: auto;
+  padding: 0;
+  text-align: left;
+  white-space: normal;
+}
+
+.paper-detail-loading {
+  display: grid;
+  min-height: 420px;
+  place-items: center;
+}
+
+.paper-detail-toolbar,
+.paper-summary-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.paper-detail-toolbar {
+  margin-bottom: 18px;
+}
+
+.paper-summary-card {
+  margin-bottom: 18px;
+  border-color: #e4eaf2;
+  box-shadow: 0 8px 24px rgb(28 66 112 / 5%);
+}
+
+.paper-summary-heading .ant-typography {
+  margin-top: 0;
+}
+
+.paper-score-summary {
+  min-width: 140px;
+  padding: 14px 20px;
+  border-radius: 10px;
+  background: #f0f7ff;
+  text-align: center;
+}
+
+.paper-score-summary .ant-typography {
+  margin: 0;
+  color: #1677ff;
+}
+
+.paper-locked-alert {
+  margin-bottom: 18px;
+}
+
+.paper-questions-card .ant-card-head {
+  border-bottom-color: #edf1f6;
+}
+
+.paper-question-preview {
+  padding: 8px 16px 2px;
+}
+
+.paper-question-preview .ant-divider {
+  margin: 12px 0;
+}
+
+.paper-question-preview .ant-typography {
+  margin-bottom: 8px;
+}
+
+.paper-question-filter {
+  margin-bottom: 16px;
+}
+
+.selected-paper-questions {
+  margin-top: 22px;
+  padding: 16px;
+  border: 1px solid #e4eaf2;
+  border-radius: 8px;
+  background: #fafcff;
+}
+
+.selected-paper-questions .ant-list-item {
+  padding-inline: 0;
+}
+
+.selected-paper-question-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+}
+
 @media (max-width: 900px) {
   .login-page {
     grid-template-columns: minmax(300px, 440px);
@@ -458,5 +550,24 @@ input {
   .choice-options-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .paper-detail-toolbar,
+  .paper-summary-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .paper-detail-toolbar > .ant-space {
+    width: 100%;
+  }
+
+  .paper-score-summary {
+    width: 100%;
+  }
+
+  .selected-paper-question-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 }

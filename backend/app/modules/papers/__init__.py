@@ -1,1 +1,1 @@
-"""Paper module placeholder."""
+"""Paper and manual paper-composition module."""

@@ -3,6 +3,7 @@
 from app.db.base import Base
 from app.modules.classes.models import Class
 from app.modules.majors.models import Major
+from app.modules.papers.models import Paper, PaperQuestion
 from app.modules.questions.models import Question, QuestionOption
 from app.modules.roles.models import Role, UserRole
 from app.modules.students.models import StudentProfile
@@ -12,6 +13,8 @@ __all__ = [
     "Base",
     "Class",
     "Major",
+    "Paper",
+    "PaperQuestion",
     "Question",
     "QuestionOption",
     "Role",

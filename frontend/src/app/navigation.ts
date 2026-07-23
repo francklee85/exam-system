@@ -65,8 +65,8 @@ export const navigationItems: readonly NavigationItem[] = [
     key: 'papers',
     path: '/papers',
     label: '试卷管理',
-    allowedRoles: ['teacher'],
-    description: '试卷管理将在后续轮次实现',
+    allowedRoles: ['admin', 'teacher'],
+    description: '人工选题组卷并维护试卷状态',
   },
   {
     key: 'exams',

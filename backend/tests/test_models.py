@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import UniqueConstraint
@@ -7,6 +9,8 @@ from app.db.models import (
     Base,
     Class,
     Major,
+    Paper,
+    PaperQuestion,
     Question,
     QuestionOption,
     Role,
@@ -14,11 +18,14 @@ from app.db.models import (
     User,
     UserRole,
 )
+from app.modules.papers.enums import PaperStatus
 from app.modules.questions.enums import QuestionDifficulty, QuestionType
 
 EXPECTED_TABLES = {
     "classes",
     "majors",
+    "paper_questions",
+    "papers",
     "question_options",
     "questions",
     "roles",
@@ -59,6 +66,8 @@ def test_model_metadata_matches_current_scope() -> None:
     assert ("code",) in _unique_column_sets("classes")
     assert {("user_id",), ("student_no",)} <= _unique_column_sets("student_profiles")
     assert ("question_id", "option_key") in _unique_column_sets("question_options")
+    assert ("paper_id", "question_id") in _unique_column_sets("paper_questions")
+    assert ("paper_id", "sort_order") in _unique_column_sets("paper_questions")
 
 
 def test_orm_relationships_can_be_queried() -> None:
@@ -99,27 +108,42 @@ def test_orm_relationships_can_be_queried() -> None:
             student_no="20260001",
             student_class=student_class,
         )
-        user.created_questions.append(
-            Question(
+        question = Question(
+            id=1,
+            question_type=QuestionType.SINGLE_CHOICE,
+            content="pwd 命令的作用是什么？",
+            correct_answer=["A"],
+            difficulty=QuestionDifficulty.EASY,
+            status=RecordStatus.ACTIVE,
+            options=[
+                QuestionOption(
+                    id=1,
+                    option_key="A",
+                    option_content="显示当前目录",
+                    sort_order=1,
+                ),
+                QuestionOption(
+                    id=2,
+                    option_key="B",
+                    option_content="切换目录",
+                    sort_order=2,
+                ),
+            ],
+        )
+        user.created_questions.append(question)
+        user.created_papers.append(
+            Paper(
                 id=1,
-                question_type=QuestionType.SINGLE_CHOICE,
-                content="pwd 命令的作用是什么？",
-                correct_answer=["A"],
-                difficulty=QuestionDifficulty.EASY,
-                status=RecordStatus.ACTIVE,
-                options=[
-                    QuestionOption(
+                name="Linux 基础测试",
+                total_score=Decimal("2.00"),
+                status=PaperStatus.DRAFT,
+                paper_questions=[
+                    PaperQuestion(
                         id=1,
-                        option_key="A",
-                        option_content="显示当前目录",
+                        question=question,
+                        score=Decimal("2.00"),
                         sort_order=1,
-                    ),
-                    QuestionOption(
-                        id=2,
-                        option_key="B",
-                        option_content="切换目录",
-                        sort_order=2,
-                    ),
+                    )
                 ],
             )
         )
@@ -139,3 +163,5 @@ def test_orm_relationships_can_be_queried() -> None:
         assert [item.code for item in major.classes] == ["CLOUD-2501"]
         assert loaded_user.created_questions[0].options[0].option_key == "A"
         assert loaded_user.created_questions[0].creator.username == "student_001"
+        assert loaded_user.created_papers[0].paper_questions[0].question.id == 1
+        assert question.paper_assignments[0].paper.name == "Linux 基础测试"

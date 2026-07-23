@@ -11,6 +11,8 @@ import { ForbiddenPage } from '../pages/ForbiddenPage'
 import { LoginPage } from '../pages/LoginPage'
 import { MajorsPage } from '../pages/MajorsPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
+import { PaperDetailPage } from '../pages/PaperDetailPage'
+import { PapersPage } from '../pages/PapersPage'
 import { QuestionsPage } from '../pages/QuestionsPage'
 import { StudentsPage } from '../pages/StudentsPage'
 import { TeachersPage } from '../pages/TeachersPage'
@@ -28,6 +30,7 @@ const placeholderRoutes = navigationItems
         'majors',
         'classes',
         'questions',
+        'papers',
       ].includes(item.key),
   )
   .map((item) => ({
@@ -107,6 +110,22 @@ export const router = createBrowserRouter([
             element: (
               <RoleRoute allowedRoles={['admin', 'teacher']}>
                 <QuestionsPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/papers',
+            element: (
+              <RoleRoute allowedRoles={['admin', 'teacher']}>
+                <PapersPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/papers/:paperId',
+            element: (
+              <RoleRoute allowedRoles={['admin', 'teacher']}>
+                <PaperDetailPage />
               </RoleRoute>
             ),
           },
