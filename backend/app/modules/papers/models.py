@@ -21,6 +21,7 @@ from app.db.mixins import TimestampMixin
 from app.modules.papers.enums import PaperStatus, paper_status_type
 
 if TYPE_CHECKING:
+    from app.modules.exams.models import Exam
     from app.modules.questions.models import Question
     from app.modules.users.models import User
 
@@ -58,6 +59,7 @@ class Paper(TimestampMixin, Base):
         passive_deletes=True,
         order_by="PaperQuestion.sort_order",
     )
+    exams: Mapped[list[Exam]] = relationship(back_populates="paper")
 
 
 class PaperQuestion(TimestampMixin, Base):

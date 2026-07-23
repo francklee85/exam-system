@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import create_engine, select
@@ -8,6 +9,9 @@ from app.db.enums import RecordStatus
 from app.db.models import (
     Base,
     Class,
+    Exam,
+    ExamQuestion,
+    ExamTarget,
     Major,
     Paper,
     PaperQuestion,
@@ -18,11 +22,15 @@ from app.db.models import (
     User,
     UserRole,
 )
+from app.modules.exams.enums import ExamStatus, ExamTargetType
 from app.modules.papers.enums import PaperStatus
 from app.modules.questions.enums import QuestionDifficulty, QuestionType
 
 EXPECTED_TABLES = {
     "classes",
+    "exam_questions",
+    "exam_targets",
+    "exams",
     "majors",
     "paper_questions",
     "papers",
@@ -68,6 +76,10 @@ def test_model_metadata_matches_current_scope() -> None:
     assert ("question_id", "option_key") in _unique_column_sets("question_options")
     assert ("paper_id", "question_id") in _unique_column_sets("paper_questions")
     assert ("paper_id", "sort_order") in _unique_column_sets("paper_questions")
+    assert ("exam_id", "target_type", "target_id") in _unique_column_sets(
+        "exam_targets"
+    )
+    assert ("exam_id", "sort_order") in _unique_column_sets("exam_questions")
 
 
 def test_orm_relationships_can_be_queried() -> None:
@@ -131,16 +143,58 @@ def test_orm_relationships_can_be_queried() -> None:
             ],
         )
         user.created_questions.append(question)
-        user.created_papers.append(
-            Paper(
+        paper = Paper(
+            id=1,
+            name="Linux 基础测试",
+            total_score=Decimal("2.00"),
+            status=PaperStatus.ACTIVE,
+            paper_questions=[
+                PaperQuestion(
+                    id=1,
+                    question=question,
+                    score=Decimal("2.00"),
+                    sort_order=1,
+                )
+            ],
+        )
+        user.created_papers.append(paper)
+        user.created_exams.append(
+            Exam(
                 id=1,
-                name="Linux 基础测试",
+                name="Linux 阶段考试",
+                paper=paper,
+                start_time=datetime(2026, 7, 30, 1, 0),
+                end_time=datetime(2026, 7, 30, 3, 0),
+                duration_minutes=90,
+                pass_score=Decimal("1.20"),
                 total_score=Decimal("2.00"),
-                status=PaperStatus.DRAFT,
-                paper_questions=[
-                    PaperQuestion(
+                status=ExamStatus.PUBLISHED,
+                targets=[
+                    ExamTarget(
                         id=1,
-                        question=question,
+                        target_type=ExamTargetType.CLASS,
+                        target_id=1,
+                    )
+                ],
+                snapshot_questions=[
+                    ExamQuestion(
+                        id=1,
+                        original_question_id=1,
+                        question_type=QuestionType.SINGLE_CHOICE,
+                        content=question.content,
+                        options=[
+                            {
+                                "key": "A",
+                                "content": "显示当前目录",
+                                "sort_order": 1,
+                            },
+                            {
+                                "key": "B",
+                                "content": "切换目录",
+                                "sort_order": 2,
+                            },
+                        ],
+                        correct_answer=["A"],
                         score=Decimal("2.00"),
                         sort_order=1,
                     )
@@ -165,3 +219,6 @@ def test_orm_relationships_can_be_queried() -> None:
         assert loaded_user.created_questions[0].creator.username == "student_001"
         assert loaded_user.created_papers[0].paper_questions[0].question.id == 1
         assert question.paper_assignments[0].paper.name == "Linux 基础测试"
+        assert loaded_user.created_exams[0].paper.name == "Linux 基础测试"
+        assert loaded_user.created_exams[0].targets[0].target_id == 1
+        assert loaded_user.created_exams[0].snapshot_questions[0].content == question.content
