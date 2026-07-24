@@ -24,6 +24,7 @@ const payload: QuestionCreateRequest = {
     { option_key: 'B', option_content: '答案 B', sort_order: 2 },
   ],
   correct_answer: ['A'],
+  reference_answer: null,
 }
 
 describe('question API module', () => {

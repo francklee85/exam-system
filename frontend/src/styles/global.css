@@ -341,6 +341,10 @@ input {
   background: #fafcff;
 }
 
+.manual-question-alert {
+  margin-bottom: 18px;
+}
+
 .choice-options-heading {
   display: flex;
   align-items: center;

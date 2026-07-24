@@ -29,6 +29,16 @@ import type {
   QuestionType,
 } from '../types/question'
 import { formatDateTime } from '../utils/dateTime'
+import {
+  DIFFICULTY_LABELS,
+  DIFFICULTY_OPTIONS,
+  QUESTION_GRADING_MODE_COLORS,
+  QUESTION_GRADING_MODE_LABELS,
+  QUESTION_GRADING_MODES,
+  QUESTION_TYPE_COLORS,
+  QUESTION_TYPE_LABELS,
+  QUESTION_TYPE_OPTIONS,
+} from '../utils/questionPresentation'
 
 interface QuestionSearchValues {
   keyword?: string
@@ -38,24 +48,6 @@ interface QuestionSearchValues {
 }
 
 const DEFAULT_PAGE_SIZE = 10
-
-const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
-  single_choice: '单选题',
-  multiple_choice: '多选题',
-  true_false: '判断题',
-}
-
-const QUESTION_TYPE_COLORS: Record<QuestionType, string> = {
-  single_choice: 'blue',
-  multiple_choice: 'purple',
-  true_false: 'cyan',
-}
-
-const DIFFICULTY_LABELS: Record<Difficulty, string> = {
-  easy: '简单',
-  medium: '中等',
-  hard: '困难',
-}
 
 const DIFFICULTY_COLORS: Record<Difficulty, string> = {
   easy: 'success',
@@ -143,6 +135,19 @@ export function QuestionsPage() {
           {QUESTION_TYPE_LABELS[questionType]}
         </Tag>
       ),
+    },
+    {
+      title: '阅卷方式',
+      dataIndex: 'question_type',
+      width: 100,
+      render: (questionType: QuestionType) => {
+        const mode = QUESTION_GRADING_MODES[questionType]
+        return (
+          <Tag color={QUESTION_GRADING_MODE_COLORS[mode]}>
+            {QUESTION_GRADING_MODE_LABELS[mode]}
+          </Tag>
+        )
+      },
     },
     {
       title: '题干摘要',
@@ -238,7 +243,7 @@ export function QuestionsPage() {
         <div>
           <Typography.Title level={3}>题库管理</Typography.Title>
           <Typography.Text type="secondary">
-            管理单选题、多选题和判断题，正确答案仅用于管理端
+            管理五种题型；客观题自动阅卷，填空题和主观问答题人工阅卷
           </Typography.Text>
         </div>
         <Button
@@ -283,11 +288,7 @@ export function QuestionsPage() {
             <Select
               allowClear
               placeholder="全部题型"
-              options={[
-                { value: 'single_choice', label: '单选题' },
-                { value: 'multiple_choice', label: '多选题' },
-                { value: 'true_false', label: '判断题' },
-              ]}
+              options={QUESTION_TYPE_OPTIONS}
               data-e2e="question-type-filter"
             />
           </Form.Item>
@@ -295,11 +296,7 @@ export function QuestionsPage() {
             <Select
               allowClear
               placeholder="全部难度"
-              options={[
-                { value: 'easy', label: '简单' },
-                { value: 'medium', label: '中等' },
-                { value: 'hard', label: '困难' },
-              ]}
+              options={DIFFICULTY_OPTIONS}
               data-e2e="question-difficulty-filter"
             />
           </Form.Item>

@@ -165,6 +165,27 @@ describe('exam detail and publish flow', () => {
     expect(screen.getByText('正确')).toBeInTheDocument()
   })
 
+  it('renders manual answers from immutable snapshots without showing null answers', async () => {
+    mockedGetExam.mockResolvedValue({
+      ...publishedExam,
+      snapshot_question_count: 5,
+    })
+    const user = userEvent.setup()
+    renderDetail(publishedExam.id)
+    await screen.findByRole('heading', { name: publishedExam.name })
+    await user.click(screen.getByRole('button', { name: '查看考试题目' }))
+    await screen.findByText('Linux 默认超级用户名称是 ______。')
+    expect(screen.getByText('填空题')).toBeInTheDocument()
+    expect(screen.getByText('主观问答题')).toBeInTheDocument()
+
+    const expandButtons = screen.getAllByLabelText('Expand row')
+    await user.click(expandButtons[3]!)
+    expect(await screen.findByText('root')).toBeInTheDocument()
+    expect(screen.getByText(/参考答案：/u)).toBeInTheDocument()
+    expect(screen.queryByText(/正确答案：null/u)).not.toBeInTheDocument()
+    expect(mockedGetExamQuestions).toHaveBeenCalledTimes(1)
+  })
+
   it('shows a recoverable result when the exam is missing', async () => {
     mockedGetExam.mockRejectedValue(
       Object.assign(new Error('missing'), {

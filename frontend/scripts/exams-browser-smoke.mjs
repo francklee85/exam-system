@@ -29,6 +29,8 @@ const contents = {
   single: `Linux 中查看当前工作目录的命令是？ [${suffix}]`,
   multiple: `以下哪些属于 Linux 常见文件系统？ [${suffix}]`,
   trueFalse: `Kubernetes 是一个容器编排系统。 [${suffix}]`,
+  fillBlank: `Linux 默认超级用户名称是 ______。 [${suffix}]`,
+  subjective: `请简述 Docker 容器和虚拟机的主要区别。 [${suffix}]`,
 }
 
 const results = {
@@ -39,6 +41,7 @@ const results = {
   draftEdited: false,
   publishedAndLocked: false,
   snapshotsReadable: false,
+  manualSnapshotsReadable: false,
   snapshotsImmutableAfterQuestionEdit: false,
   repeatPublishRejected: false,
   allTargetDisplayed: false,
@@ -86,14 +89,14 @@ try {
   await selectOption(
     page,
     '[data-e2e="exam-paper"]',
-    `${paperName}（10.00 分 / 3 题）`,
+    `${paperName}（100.00 分 / 5 题）`,
   )
   results.activePaperLoaded = true
   await clearAndType(page, '#exam-editor_description', '浏览器联调初始说明')
   await fillDatePicker(page, '[data-e2e="exam-start-time"]', '2026-07-30 09:00:00')
   await fillDatePicker(page, '[data-e2e="exam-end-time"]', '2026-07-30 11:00:00')
   // duration_minutes defaults to 90; only adjust the non-default pass score.
-  await setNumberInput(page, '[data-e2e="exam-pass-score"]', '6')
+  await setNumberInput(page, '[data-e2e="exam-pass-score"]', '60')
   await page.evaluate(() => {
     const label = [...document.querySelectorAll('label')].find(
       (candidate) => candidate.textContent?.trim() === '指定班级',
@@ -134,7 +137,7 @@ try {
     exam.status === 'draft' &&
     exam.target.type === 'class' &&
     exam.target.id === setup.classRecord.id &&
-    exam.total_score === '10.00'
+    exam.total_score === '100.00'
   results.timezoneContractCorrect =
     exam.start_time === '2026-07-30T01:00:00' &&
     exam.end_time === '2026-07-30T03:00:00'
@@ -167,8 +170,8 @@ try {
   await waitForText(page, '考试已发布，核心配置和考试题目快照已冻结。')
   results.publishedAndLocked =
     exam.status === 'published' &&
-    exam.total_score === '10.00' &&
-    exam.snapshot_question_count === 3 &&
+    exam.total_score === '100.00' &&
+    exam.snapshot_question_count === 5 &&
     exam.published_at !== null &&
     (await page.$('[data-e2e="edit-exam-detail"]')) === null
 
@@ -183,14 +186,37 @@ try {
   const originalSnapshots = await (await snapshotResponse).json()
   await waitForText(page, contents.single)
   results.snapshotsReadable =
-    originalSnapshots.length === 3 &&
+    originalSnapshots.length === 5 &&
     originalSnapshots[0].content === contents.single &&
     originalSnapshots[0].options[0].content === 'pwd' &&
     originalSnapshots[0].correct_answer.join(',') === 'A' &&
-    originalSnapshots.map((item) => item.score).join(',') === '2.50,5.00,2.50'
+    originalSnapshots.map((item) => item.score).join(',') ===
+      '10.00,10.00,10.00,20.00,50.00'
+
+  const subjectiveSnapshot = originalSnapshots.find(
+    (item) => item.question_type === 'subjective',
+  )
+  if (!subjectiveSnapshot) {
+    throw new Error('Subjective snapshot was not generated')
+  }
+  await page.evaluate((questionContent) => {
+    const row = [...document.querySelectorAll('tbody tr')].find((candidate) =>
+      candidate.textContent?.includes(questionContent),
+    )
+    row?.querySelector('.ant-table-row-expand-icon')?.click()
+  }, contents.subjective)
+  await waitForText(
+    page,
+    '容器共享宿主机内核，虚拟机运行完整的客户操作系统。',
+  )
+  results.manualSnapshotsReadable =
+    subjectiveSnapshot?.correct_answer === null &&
+    subjectiveSnapshot?.options === null &&
+    subjectiveSnapshot?.reference_answer ===
+      '容器共享宿主机内核，虚拟机运行完整的客户操作系统。'
 
   currentStage = 'snapshot-immutability'
-  await mutateOriginalQuestion(page, originalSnapshots[0].original_question_id)
+  await mutateManualQuestion(page, subjectiveSnapshot.original_question_id)
   const refreshedSnapshots = await browserRequest(
     page,
     `/api/v1/exams/${exam.id}/questions`,
@@ -209,7 +235,7 @@ try {
     `/api/v1/exams/${exam.id}/questions`,
   )
   results.repeatPublishRejected =
-    repeated.status === 409 && snapshotsAfterRepeat.length === 3
+    repeated.status === 409 && snapshotsAfterRepeat.length === 5
 
   currentStage = 'other-targets'
   const allExam = await createDraftByApi(page, {
@@ -373,6 +399,7 @@ async function createQuestions(page) {
         option_key, option_content, sort_order: index + 1,
       })),
       correct_answer: ['A'],
+      reference_answer: null,
       analysis: 'pwd 用于显示当前工作目录。',
       difficulty: 'easy',
     },
@@ -385,6 +412,7 @@ async function createQuestions(page) {
         option_key, option_content, sort_order: index + 1,
       })),
       correct_answer: ['A', 'B', 'D'],
+      reference_answer: null,
       analysis: 'ext4、XFS 和 Btrfs 是 Linux 常见文件系统。',
       difficulty: 'medium',
     },
@@ -393,8 +421,27 @@ async function createQuestions(page) {
       content: contents.trueFalse,
       options: [],
       correct_answer: ['true'],
+      reference_answer: null,
       analysis: 'Kubernetes 用于容器编排。',
       difficulty: 'easy',
+    },
+    {
+      question_type: 'fill_blank',
+      content: contents.fillBlank,
+      options: [],
+      correct_answer: null,
+      reference_answer: 'root',
+      analysis: 'Linux 默认超级用户为 root。',
+      difficulty: 'easy',
+    },
+    {
+      question_type: 'subjective',
+      content: contents.subjective,
+      options: [],
+      correct_answer: null,
+      reference_answer: '容器共享宿主机内核，虚拟机运行完整的客户操作系统。',
+      analysis: null,
+      difficulty: 'medium',
     },
   ]
   const questions = []
@@ -417,7 +464,7 @@ async function createActivePaper(page, questions) {
     body: {
       items: questions.map((question, index) => ({
         question_id: question.id,
-        score: ['2.50', '5.00', '2.50'][index],
+        score: ['10.00', '10.00', '10.00', '20.00', '50.00'][index],
       })),
     },
   })
@@ -443,20 +490,17 @@ async function createDraftByApi(page, { name, paperId, target }) {
   })
 }
 
-async function mutateOriginalQuestion(page, questionId) {
+async function mutateManualQuestion(page, questionId) {
   const detail = await browserRequest(page, `/api/v1/questions/${questionId}`)
   return browserRequest(page, `/api/v1/questions/${questionId}`, {
     method: 'PUT',
     body: {
       question_type: detail.question_type,
-      content: `${detail.content}（原题已修改）`,
-      options: detail.options.map((option) => ({
-        option_key: option.option_key,
-        option_content: option.option_content,
-        sort_order: option.sort_order,
-      })),
-      correct_answer: ['B'],
-      analysis: '原题修改不应影响考试快照',
+      content: detail.content,
+      options: [],
+      correct_answer: null,
+      reference_answer: '发布后修改的新参考答案 B',
+      analysis: detail.analysis,
       difficulty: detail.difficulty,
     },
   })

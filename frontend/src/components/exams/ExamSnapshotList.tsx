@@ -6,19 +6,12 @@ import { getApiErrorMessage } from '../../api/errors'
 import { getExamQuestions } from '../../api/exams'
 import type { ExamQuestionSnapshot } from '../../types/exam'
 import type { QuestionType } from '../../types/question'
-
-const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
-  single_choice: '单选题',
-  multiple_choice: '多选题',
-  true_false: '判断题',
-}
-
-function formatAnswer(snapshot: ExamQuestionSnapshot): string {
-  if (snapshot.question_type === 'true_false') {
-    return snapshot.correct_answer[0] === 'true' ? '正确' : '错误'
-  }
-  return snapshot.correct_answer.join('、')
-}
+import {
+  QUESTION_TYPE_COLORS,
+  QUESTION_TYPE_LABELS,
+  formatObjectiveAnswer,
+  isManualQuestionType,
+} from '../../utils/questionPresentation'
 
 export function ExamSnapshotList({ examId }: { examId: number }) {
   const [isRequested, setIsRequested] = useState(false)
@@ -53,7 +46,9 @@ export function ExamSnapshotList({ examId }: { examId: number }) {
       title: '题型',
       dataIndex: 'question_type',
       width: 100,
-      render: (value: QuestionType) => <Tag>{QUESTION_TYPE_LABELS[value]}</Tag>,
+      render: (value: QuestionType) => (
+        <Tag color={QUESTION_TYPE_COLORS[value]}>{QUESTION_TYPE_LABELS[value]}</Tag>
+      ),
     },
     {
       title: '题干',
@@ -124,7 +119,7 @@ export function ExamSnapshotList({ examId }: { examId: number }) {
               <div className="exam-snapshot-detail">
                 {snapshot.question_type === 'true_false' ? (
                   <Typography.Paragraph>选项：正确 / 错误</Typography.Paragraph>
-                ) : (
+                ) : !isManualQuestionType(snapshot.question_type) ? (
                   snapshot.options
                     ?.slice()
                     .sort((left, right) => left.sort_order - right.sort_order)
@@ -133,11 +128,21 @@ export function ExamSnapshotList({ examId }: { examId: number }) {
                         {option.key}. {option.content}
                       </Typography.Paragraph>
                     ))
+                ) : null}
+                {isManualQuestionType(snapshot.question_type) ? (
+                  <Typography.Paragraph>
+                    <Typography.Text strong>参考答案：</Typography.Text>
+                    {snapshot.reference_answer || '暂无参考答案'}
+                  </Typography.Paragraph>
+                ) : (
+                  <Typography.Paragraph>
+                    <Typography.Text strong>正确答案：</Typography.Text>
+                    {formatObjectiveAnswer(
+                      snapshot.question_type,
+                      snapshot.correct_answer,
+                    )}
+                  </Typography.Paragraph>
                 )}
-                <Typography.Paragraph>
-                  <Typography.Text strong>正确答案：</Typography.Text>
-                  {formatAnswer(snapshot)}
-                </Typography.Paragraph>
                 <Typography.Paragraph>
                   <Typography.Text strong>答案解析：</Typography.Text>
                   {snapshot.analysis || '暂无解析'}

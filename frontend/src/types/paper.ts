@@ -34,7 +34,8 @@ export interface PaperQuestion {
   question_type: QuestionType
   content: string
   options: PaperQuestionOption[]
-  correct_answer: string[]
+  correct_answer: string[] | null
+  reference_answer: string | null
   analysis: string | null
   difficulty: Difficulty
   question_status: RecordStatus

@@ -29,6 +29,12 @@ import type {
   QuestionListParams,
   QuestionType,
 } from '../../types/question'
+import {
+  DIFFICULTY_LABELS,
+  DIFFICULTY_OPTIONS,
+  QUESTION_TYPE_LABELS,
+  QUESTION_TYPE_OPTIONS,
+} from '../../utils/questionPresentation'
 
 interface QuestionSelectorValues {
   keyword?: string
@@ -46,18 +52,6 @@ interface QuestionSelectorDrawerProps {
 }
 
 const DEFAULT_PAGE_SIZE = 10
-
-const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
-  single_choice: '单选题',
-  multiple_choice: '多选题',
-  true_false: '判断题',
-}
-
-const DIFFICULTY_LABELS: Record<Difficulty, string> = {
-  easy: '简单',
-  medium: '中等',
-  hard: '困难',
-}
 
 export function QuestionSelectorDrawer({
   open,
@@ -291,11 +285,7 @@ export function QuestionSelectorDrawer({
               allowClear
               placeholder="全部题型"
               data-e2e="paper-question-type"
-              options={[
-                { value: 'single_choice', label: '单选题' },
-                { value: 'multiple_choice', label: '多选题' },
-                { value: 'true_false', label: '判断题' },
-              ]}
+              options={QUESTION_TYPE_OPTIONS}
             />
           </Form.Item>
           <Form.Item name="difficulty" label="难度">
@@ -303,11 +293,7 @@ export function QuestionSelectorDrawer({
               allowClear
               placeholder="全部难度"
               data-e2e="paper-question-difficulty"
-              options={[
-                { value: 'easy', label: '简单' },
-                { value: 'medium', label: '中等' },
-                { value: 'hard', label: '困难' },
-              ]}
+              options={DIFFICULTY_OPTIONS}
             />
           </Form.Item>
           <Form.Item className="filter-actions">

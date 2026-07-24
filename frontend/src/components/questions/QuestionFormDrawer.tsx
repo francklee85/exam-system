@@ -10,12 +10,19 @@ import type {
   QuestionType,
 } from '../../types/question'
 import { optionKeyFromIndex } from '../../utils/questionOptions'
+import {
+  DIFFICULTY_OPTIONS,
+  QUESTION_TYPE_OPTIONS,
+  isChoiceQuestionType,
+  isManualQuestionType,
+} from '../../utils/questionPresentation'
 import { ChoiceOptionsEditor, type EditableChoiceOption } from './ChoiceOptionsEditor'
 
 interface QuestionFormValues {
   question_type: QuestionType
   content: string
   difficulty: Difficulty
+  reference_answer?: string
   analysis?: string
 }
 
@@ -100,14 +107,22 @@ export function QuestionFormDrawer({
           question_type: question.question_type,
           content: question.content,
           difficulty: question.difficulty,
+          reference_answer: question.reference_answer ?? undefined,
           analysis: question.analysis ?? undefined,
         })
         setQuestionType(question.question_type)
 
+        if (isManualQuestionType(question.question_type)) {
+          setOptions([])
+          setSelectedOptionIds([])
+          setTrueFalseAnswer(undefined)
+          return
+        }
+
         if (question.question_type === 'true_false') {
           setOptions([])
           setSelectedOptionIds([])
-          const answer = question.correct_answer[0]
+          const answer = question.correct_answer?.[0]
           setTrueFalseAnswer(
             answer === 'true' || answer === 'false' ? answer : undefined,
           )
@@ -124,7 +139,9 @@ export function QuestionFormDrawer({
         setSelectedOptionIds(
           editableOptions
             .filter((_, index) =>
-              question.correct_answer.includes(sortedOptions[index]?.option_key ?? ''),
+              question.correct_answer?.includes(
+                sortedOptions[index]?.option_key ?? '',
+              ) ?? false,
             )
             .map((option) => option.id),
         )
@@ -160,9 +177,21 @@ export function QuestionFormDrawer({
     setTrueFalseAnswer(undefined)
     setFormError(null)
 
+    if (isManualQuestionType(nextType)) {
+      setOptions([])
+      if (!isManualQuestionType(previousType)) {
+        form.setFieldValue('reference_answer', undefined)
+      }
+      return
+    }
+
+    form.setFieldValue('reference_answer', undefined)
     if (nextType === 'true_false') {
       setOptions([])
-    } else if (previousType === 'true_false') {
+    } else if (
+      isChoiceQuestionType(nextType) &&
+      !isChoiceQuestionType(previousType)
+    ) {
       setOptions(createDefaultOptions())
     }
   }
@@ -170,6 +199,19 @@ export function QuestionFormDrawer({
   const buildPayload = (values: QuestionFormValues): QuestionCreateRequest | null => {
     const content = values.content.trim()
     const analysis = values.analysis?.trim() || null
+    const referenceAnswer = values.reference_answer?.trim() || null
+
+    if (isManualQuestionType(questionType)) {
+      return {
+        question_type: questionType,
+        content,
+        difficulty: values.difficulty,
+        analysis,
+        options: [],
+        correct_answer: null,
+        reference_answer: referenceAnswer,
+      }
+    }
 
     if (questionType === 'true_false') {
       if (trueFalseAnswer === undefined) {
@@ -183,6 +225,7 @@ export function QuestionFormDrawer({
         analysis,
         options: [],
         correct_answer: [trueFalseAnswer],
+        reference_answer: null,
       }
     }
 
@@ -224,6 +267,7 @@ export function QuestionFormDrawer({
       analysis,
       options: normalizedOptions,
       correct_answer: correctAnswer,
+      reference_answer: null,
     }
   }
 
@@ -326,11 +370,7 @@ export function QuestionFormDrawer({
                 rules={[{ required: true, message: '请选择题型' }]}
               >
                 <Select
-                  options={[
-                    { value: 'single_choice', label: '单选题' },
-                    { value: 'multiple_choice', label: '多选题' },
-                    { value: 'true_false', label: '判断题' },
-                  ]}
+                  options={QUESTION_TYPE_OPTIONS}
                   onChange={handleQuestionTypeChange}
                   data-e2e="question-type"
                 />
@@ -341,11 +381,7 @@ export function QuestionFormDrawer({
                 rules={[{ required: true, message: '请选择难度' }]}
               >
                 <Select
-                  options={[
-                    { value: 'easy', label: '简单' },
-                    { value: 'medium', label: '中等' },
-                    { value: 'hard', label: '困难' },
-                  ]}
+                  options={DIFFICULTY_OPTIONS}
                   data-e2e="question-difficulty"
                 />
               </Form.Item>
@@ -378,7 +414,7 @@ export function QuestionFormDrawer({
                   </Space>
                 </Radio.Group>
               </Form.Item>
-            ) : (
+            ) : isChoiceQuestionType(questionType) ? (
               <ChoiceOptionsEditor
                 questionType={questionType}
                 options={options}
@@ -387,6 +423,35 @@ export function QuestionFormDrawer({
                 onSelectedOptionIdsChange={setSelectedOptionIds}
                 createOption={createEditableOption}
               />
+            ) : (
+              <>
+                <Alert
+                  className="manual-question-alert"
+                  type="info"
+                  showIcon
+                  message="该题为人工阅卷题"
+                  description={
+                    questionType === 'fill_blank'
+                      ? '参考答案仅供人工阅卷参考，系统不会自动判分。'
+                      : '学生提交文本答案后由教师人工给分，系统不会自动判分。'
+                  }
+                />
+                <Form.Item
+                  label="参考答案（可选）"
+                  name="reference_answer"
+                  extra="该内容属于管理端敏感阅卷信息，不会作为自动判分答案。"
+                >
+                  <Input.TextArea
+                    rows={questionType === 'subjective' ? 7 : 3}
+                    placeholder={
+                      questionType === 'fill_blank'
+                        ? '例如：root'
+                        : '填写供教师人工阅卷参考的答案'
+                    }
+                    data-e2e="question-reference-answer"
+                  />
+                </Form.Item>
+              </>
             )}
 
             <Form.Item label="答案解析" name="analysis">

@@ -28,6 +28,8 @@ const questionContents = {
   single: `Linux 中查看当前工作目录的命令是？ [${suffix}]`,
   multiple: `以下哪些属于 Linux 常见文件系统？ [${suffix}]`,
   trueFalse: `Kubernetes 是一个容器编排系统。 [${suffix}]`,
+  fillBlank: `Linux 默认超级用户名称是 ______。 [${suffix}]`,
+  subjective: `请简述 Docker 容器和虚拟机的主要区别。 [${suffix}]`,
   disabled: `这是一道不可加入试卷的禁用题 [${suffix}]`,
 }
 
@@ -37,6 +39,7 @@ const results = {
   selectorOnlyRequestsActive: false,
   filtersPassedToQuestionApi: false,
   batchAddedWithScores: false,
+  manualTypesRendered: false,
   duplicateSelectionBlocked: false,
   scoreUpdatedAndTotalAuthoritative: false,
   reorderPersistedAfterRefresh: false,
@@ -84,7 +87,7 @@ try {
 
   currentStage = 'create-test-questions'
   questions.push(...(await createQuestions(page)))
-  const [single, multiple, trueFalse, disabled] = questions
+  const [single, multiple, trueFalse, fillBlank, subjective, disabled] = questions
 
   currentStage = 'open-papers'
   await page.goto(`${frontendUrl}/papers`, { waitUntil: 'domcontentloaded' })
@@ -142,8 +145,8 @@ try {
 
   currentStage = 'reset-selector-query'
   await clearAndType(page, '[data-e2e="paper-question-keyword"]', suffix)
-  await clearAntSelect(page, '[data-e2e="paper-question-type"]')
   await clearAntSelect(page, '[data-e2e="paper-question-difficulty"]')
+  await clearAntSelect(page, '[data-e2e="paper-question-type"]')
   const activeQuestionResponse = page.waitForResponse((response) => {
     const url = new URL(response.url())
     return (
@@ -162,15 +165,24 @@ try {
     waitForTableText(page, questionContents.single),
     waitForTableText(page, questionContents.multiple),
     waitForTableText(page, questionContents.trueFalse),
+    waitForTableText(page, questionContents.fillBlank),
+    waitForTableText(page, questionContents.subjective),
   ])
+  results.manualTypesRendered = await page.evaluate(
+    () =>
+      document.body.textContent?.includes('填空题') &&
+      document.body.textContent?.includes('主观问答题'),
+  )
 
-  currentStage = 'select-three-questions'
-  for (const question of [single, multiple, trueFalse]) {
+  currentStage = 'select-five-questions'
+  for (const question of [single, multiple, trueFalse, fillBlank, subjective]) {
     await page.click(`[aria-label="选择题目 ${question.id}"]`)
   }
   await setNumberInput(page, `题目 ${single.id} 分值`, '2')
   await setNumberInput(page, `题目 ${multiple.id} 分值`, '5')
   await setNumberInput(page, `题目 ${trueFalse.id} 分值`, '3')
+  await setNumberInput(page, `题目 ${fillBlank.id} 分值`, '5')
+  await setNumberInput(page, `题目 ${subjective.id} 分值`, '10')
   const batchResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith(`/api/v1/papers/${paper.id}/questions`) &&
@@ -180,11 +192,12 @@ try {
   await page.click('[data-e2e="confirm-add-paper-questions"]')
   paper = await (await batchResponse).json()
   await waitForDrawerClosed(page)
-  await waitForTotal(page, '10.00')
+  await waitForTotal(page, '25.00')
   results.batchAddedWithScores =
-    paper.question_count === 3 &&
-    paper.total_score === '10.00' &&
-    paper.questions.map((item) => item.score).join(',') === '2.00,5.00,3.00'
+    paper.question_count === 5 &&
+    paper.total_score === '25.00' &&
+    paper.questions.map((item) => item.score).join(',') ===
+      '2.00,5.00,3.00,5.00,10.00'
 
   currentStage = 'verify-duplicate-prevention'
   await openQuestionSelector(page)
@@ -211,9 +224,9 @@ try {
   )
   await clickButtonByText(page, '保存')
   paper = await (await scoreResponse).json()
-  await waitForTotal(page, '10.50')
+  await waitForTotal(page, '25.50')
   results.scoreUpdatedAndTotalAuthoritative =
-    paper.total_score === '10.50' &&
+    paper.total_score === '25.50' &&
     paper.questions.find((item) => item.question_id === single.id)?.score === '2.50'
 
   currentStage = 'reorder'
@@ -249,10 +262,10 @@ try {
   )
   await clickButtonByText(page, '确认移除')
   paper = await (await removeResponse).json()
-  await waitForTotal(page, '7.50')
+  await waitForTotal(page, '22.50')
   results.relationRemovedAndTotalUpdated =
-    paper.question_count === 2 &&
-    paper.total_score === '7.50' &&
+    paper.question_count === 4 &&
+    paper.total_score === '22.50' &&
     !paper.questions.some((item) => item.question_id === trueFalse.id) &&
     paper.questions.every((item, index) => item.sort_order === index + 1)
 
@@ -277,8 +290,8 @@ try {
   const afterDisabledAttempt = await getPaperFromBrowser(page, paper.id)
   results.disabledQuestionRejected =
     disabledAttempt.status === 409 &&
-    afterDisabledAttempt.question_count === 2 &&
-    afterDisabledAttempt.total_score === '7.50'
+    afterDisabledAttempt.question_count === 4 &&
+    afterDisabledAttempt.total_score === '22.50'
 
   currentStage = 'readd-valid-question'
   await openQuestionSelector(page)
@@ -297,9 +310,9 @@ try {
   await page.click('[data-e2e="confirm-add-paper-questions"]')
   paper = await (await readdResponse).json()
   await waitForDrawerClosed(page)
-  await waitForTotal(page, '10.50')
+  await waitForTotal(page, '25.50')
   results.validQuestionReadded =
-    paper.question_count === 3 && paper.total_score === '10.50'
+    paper.question_count === 5 && paper.total_score === '25.50'
 
   currentStage = 'activate-paper'
   await page.click('[data-e2e="paper-status-active"]')
@@ -356,8 +369,8 @@ try {
   currentStage = 'backend-consistency'
   const backendPaper = await getPaperFromBrowser(page, paper.id)
   results.backendConsistent =
-    backendPaper.total_score === '10.50' &&
-    backendPaper.question_count === 3 &&
+    backendPaper.total_score === '25.50' &&
+    backendPaper.question_count === 5 &&
     backendPaper.questions.every((item, index) => item.sort_order === index + 1)
 
   currentStage = 'student-permission'
@@ -550,6 +563,30 @@ async function createQuestions(page) {
           difficulty: 'easy',
         }),
       })
+      const fillBlank = await request('/api/v1/questions', {
+        method: 'POST',
+        body: JSON.stringify({
+          question_type: 'fill_blank',
+          content: contents.fillBlank,
+          options: [],
+          correct_answer: null,
+          reference_answer: 'root',
+          analysis: 'Linux 默认超级用户为 root。',
+          difficulty: 'easy',
+        }),
+      })
+      const subjective = await request('/api/v1/questions', {
+        method: 'POST',
+        body: JSON.stringify({
+          question_type: 'subjective',
+          content: contents.subjective,
+          options: [],
+          correct_answer: null,
+          reference_answer: '容器共享宿主机内核，虚拟机运行完整客户操作系统。',
+          analysis: null,
+          difficulty: 'medium',
+        }),
+      })
       const disabled = await request('/api/v1/questions', {
         method: 'POST',
         body: JSON.stringify({
@@ -565,7 +602,14 @@ async function createQuestions(page) {
         method: 'PATCH',
         body: JSON.stringify({ status: 'disabled' }),
       })
-      return [single, multiple, trueFalse, { ...disabled, status: 'disabled' }]
+      return [
+        single,
+        multiple,
+        trueFalse,
+        fillBlank,
+        subjective,
+        { ...disabled, status: 'disabled' },
+      ]
     },
     { apiBaseUrl: apiUrl, contents: questionContents },
   )

@@ -87,7 +87,8 @@ export interface ExamQuestionSnapshot {
   question_type: QuestionType
   content: string
   options: ExamSnapshotOption[] | null
-  correct_answer: string[]
+  correct_answer: string[] | null
+  reference_answer: string | null
   analysis: string | null
   score: DecimalString
   sort_order: number

@@ -44,24 +44,13 @@ import type {
 } from '../types/paper'
 import type { Difficulty, QuestionType } from '../types/question'
 import { formatDateTime } from '../utils/dateTime'
-
-const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
-  single_choice: '单选题',
-  multiple_choice: '多选题',
-  true_false: '判断题',
-}
-
-const QUESTION_TYPE_COLORS: Record<QuestionType, string> = {
-  single_choice: 'blue',
-  multiple_choice: 'purple',
-  true_false: 'cyan',
-}
-
-const DIFFICULTY_LABELS: Record<Difficulty, string> = {
-  easy: '简单',
-  medium: '中等',
-  hard: '困难',
-}
+import {
+  DIFFICULTY_LABELS,
+  QUESTION_TYPE_COLORS,
+  QUESTION_TYPE_LABELS,
+  formatObjectiveAnswer,
+  isManualQuestionType,
+} from '../utils/questionPresentation'
 
 const STATUS_ACTIONS: Record<
   PaperStatus,
@@ -82,17 +71,9 @@ const STATUS_ACTIONS: Record<
 }
 
 function formatAnswer(question: PaperQuestion): string {
-  return question.correct_answer
-    .map((answer) => {
-      if (answer === 'true') {
-        return '正确'
-      }
-      if (answer === 'false') {
-        return '错误'
-      }
-      return answer
-    })
-    .join('、')
+  return (
+    formatObjectiveAnswer(question.question_type, question.correct_answer) ?? '—'
+  )
 }
 
 export function PaperDetailPage() {
@@ -472,10 +453,9 @@ export function PaperDetailPage() {
           expandable={{
             expandedRowRender: (question) => (
               <div className="paper-question-preview">
-                <Typography.Text strong>选项</Typography.Text>
-                {question.options.length === 0 ? (
+                {question.question_type === 'true_false' ? (
                   <Typography.Paragraph>判断题：正确 / 错误</Typography.Paragraph>
-                ) : (
+                ) : !isManualQuestionType(question.question_type) ? (
                   <Space direction="vertical" size={2}>
                     {[...question.options]
                       .sort((left, right) => left.sort_order - right.sort_order)
@@ -485,12 +465,19 @@ export function PaperDetailPage() {
                         </Typography.Text>
                       ))}
                   </Space>
-                )}
+                ) : null}
                 <Divider />
-                <Typography.Paragraph>
-                  <Typography.Text strong>正确答案：</Typography.Text>
-                  {formatAnswer(question)}
-                </Typography.Paragraph>
+                {isManualQuestionType(question.question_type) ? (
+                  <Typography.Paragraph>
+                    <Typography.Text strong>参考答案：</Typography.Text>
+                    {question.reference_answer || '暂无参考答案'}
+                  </Typography.Paragraph>
+                ) : (
+                  <Typography.Paragraph>
+                    <Typography.Text strong>正确答案：</Typography.Text>
+                    {formatAnswer(question)}
+                  </Typography.Paragraph>
+                )}
                 <Typography.Paragraph>
                   <Typography.Text strong>答案解析：</Typography.Text>
                   {question.analysis ?? '暂无解析'}

@@ -34,6 +34,7 @@ export const singleChoiceDetail: QuestionDetail = {
     },
   ],
   correct_answer: ['A'],
+  reference_answer: null,
   analysis: 'pwd 用于显示当前工作目录。',
 }
 
@@ -81,6 +82,7 @@ export const multipleChoiceDetail: QuestionDetail = {
     },
   ],
   correct_answer: ['A', 'B', 'D'],
+  reference_answer: null,
   analysis: 'ext4、XFS 和 Btrfs 是 Linux 常见文件系统。',
 }
 
@@ -95,6 +97,37 @@ export const trueFalseDetail: QuestionDetail = {
   updated_at: '2026-07-23T08:20:00',
   options: [],
   correct_answer: ['true'],
+  reference_answer: null,
+  analysis: null,
+}
+
+export const fillBlankDetail: QuestionDetail = {
+  id: 104,
+  question_type: 'fill_blank',
+  content: 'Linux 默认超级用户名称是 ______。',
+  difficulty: 'easy',
+  status: 'active',
+  created_by: creator,
+  created_at: '2026-07-23T08:30:00',
+  updated_at: '2026-07-23T08:30:00',
+  options: [],
+  correct_answer: null,
+  reference_answer: 'root',
+  analysis: 'Linux 默认超级用户为 root。',
+}
+
+export const subjectiveDetail: QuestionDetail = {
+  id: 105,
+  question_type: 'subjective',
+  content: '请简述 Docker 容器和虚拟机的主要区别。',
+  difficulty: 'medium',
+  status: 'active',
+  created_by: creator,
+  created_at: '2026-07-23T08:40:00',
+  updated_at: '2026-07-23T08:40:00',
+  options: [],
+  correct_answer: null,
+  reference_answer: '容器共享宿主机内核，虚拟机运行完整的客户操作系统。',
   analysis: null,
 }
 
@@ -102,4 +135,6 @@ export const questionListFixtures: QuestionListItem[] = [
   singleChoiceDetail,
   multipleChoiceDetail,
   trueFalseDetail,
+  fillBlankDetail,
+  subjectiveDetail,
 ]

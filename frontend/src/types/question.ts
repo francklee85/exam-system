@@ -1,6 +1,11 @@
 import type { PaginationParams, RecordStatus } from './common'
 
-export type QuestionType = 'single_choice' | 'multiple_choice' | 'true_false'
+export type QuestionType =
+  | 'single_choice'
+  | 'multiple_choice'
+  | 'true_false'
+  | 'fill_blank'
+  | 'subjective'
 export type Difficulty = 'easy' | 'medium' | 'hard'
 export type QuestionStatus = RecordStatus
 
@@ -38,7 +43,8 @@ export interface QuestionListItem {
 
 export interface QuestionDetail extends QuestionListItem {
   options: QuestionOption[]
-  correct_answer: string[]
+  correct_answer: string[] | null
+  reference_answer: string | null
   analysis: string | null
 }
 
@@ -46,7 +52,8 @@ export interface QuestionWriteRequest {
   question_type: QuestionType
   content: string
   options: QuestionOptionRequest[]
-  correct_answer: string[]
+  correct_answer: string[] | null
+  reference_answer: string | null
   analysis: string | null
   difficulty: Difficulty
 }

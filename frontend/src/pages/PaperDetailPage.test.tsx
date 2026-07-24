@@ -19,10 +19,13 @@ import {
   disabledPaperDetail,
   draftPaperDetail,
   emptyPaperDetail,
+  manualPaperQuestions,
 } from '../test/paperFixtures'
 import {
+  fillBlankDetail,
   multipleChoiceDetail,
   singleChoiceDetail,
+  subjectiveDetail,
 } from '../test/questionFixtures'
 import type { PaperDetail } from '../types/paper'
 import type { QuestionListItem } from '../types/question'
@@ -147,6 +150,26 @@ describe('paper detail rendering and basic information', () => {
     expect(screen.getByText(/pwd 用于显示当前工作目录/u)).toBeInTheDocument()
   })
 
+  it('renders manual question types and reference answers without an options area', async () => {
+    mockedGetPaper.mockResolvedValue({
+      ...draftPaperDetail,
+      total_score: '25.00',
+      question_count: 5,
+      questions: [...draftPaperDetail.questions, ...manualPaperQuestions],
+    })
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText('Linux 综合测试')
+    expect(screen.getByText('填空题')).toBeInTheDocument()
+    expect(screen.getByText('主观问答题')).toBeInTheDocument()
+
+    const expandButtons = screen.getAllByRole('button', { name: 'Expand row' })
+    await user.click(expandButtons[3]!)
+    expect(await screen.findByText('root')).toBeInTheDocument()
+    expect(screen.getByText(/参考答案：/u)).toBeInTheDocument()
+    expect(screen.queryByText(/正确答案：null/u)).not.toBeInTheDocument()
+  })
+
   it('edits only name and description on a draft paper', async () => {
     const user = userEvent.setup()
     renderDetail()
@@ -236,6 +259,63 @@ describe('manual question selection', () => {
         keyword: '容器',
         question_type: 'multiple_choice',
         difficulty: 'medium',
+      }),
+    )
+  })
+
+  it.each([
+    ['填空题', 'fill_blank'],
+    ['主观问答题', 'subjective'],
+  ] as const)('passes the %s filter for five-type paper selection', async (label, type) => {
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText('Linux 综合测试')
+    const drawer = await openSelector()
+    await chooseOption(
+      within(drawer).getByRole('combobox', { name: '题型' }),
+      label,
+    )
+    await user.click(within(drawer).getByRole('button', { name: /查\s*询/u }))
+
+    await waitFor(() =>
+      expect(mockedListQuestions).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: 'active', question_type: type }),
+      ),
+    )
+  })
+
+  it('selects fill-blank and subjective questions with independent scores', async () => {
+    mockedListQuestions.mockResolvedValue({
+      items: [fillBlankDetail, subjectiveDetail],
+      total: 2,
+      page: 1,
+      page_size: 10,
+    })
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText('Linux 综合测试')
+    const drawer = await openSelector()
+    await within(drawer).findByText(fillBlankDetail.content)
+    expect(within(drawer).getByText('填空题')).toBeInTheDocument()
+    expect(within(drawer).getByText('主观问答题')).toBeInTheDocument()
+    await user.click(within(drawer).getByLabelText('选择题目 104'))
+    await user.click(within(drawer).getByLabelText('选择题目 105'))
+    const fillScore = within(drawer).getByLabelText('题目 104 分值')
+    const subjectiveScore = within(drawer).getByLabelText('题目 105 分值')
+    await user.clear(fillScore)
+    await user.type(fillScore, '5')
+    await user.clear(subjectiveScore)
+    await user.type(subjectiveScore, '10')
+    await user.click(
+      within(drawer).getByRole('button', { name: /确认加入（2）/u }),
+    )
+
+    await waitFor(() =>
+      expect(mockedAddPaperQuestions).toHaveBeenCalledWith(501, {
+        items: [
+          { question_id: 104, score: '5.00' },
+          { question_id: 105, score: '10.00' },
+        ],
       }),
     )
   })

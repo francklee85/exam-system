@@ -27,6 +27,8 @@ const content = {
   single: `Linux 中查看当前工作目录的命令是？ [${suffix}]`,
   multiple: `以下哪些属于 Linux 常见文件系统？ [${suffix}]`,
   trueFalse: `Kubernetes 是一个容器编排系统。 [${suffix}]`,
+  fillBlank: `Linux 默认超级用户名称是 ______。 [${suffix}]`,
+  subjective: `请简述 Docker 容器和虚拟机的主要区别。 [${suffix}]`,
 }
 
 const results = {
@@ -35,8 +37,11 @@ const results = {
   singleEdit: false,
   multipleCreate: false,
   trueFalseCreate: false,
+  fillBlankCreateAndEdit: false,
+  subjectiveCreate: false,
   keywordFilter: false,
   typeFilter: false,
+  manualTypeFilters: false,
   difficultyFilter: false,
   teacherDisable: false,
   adminSeesTeacherQuestions: false,
@@ -187,12 +192,67 @@ try {
     trueFalse.options.length === 0 &&
     trueFalse.correct_answer[0] === 'true'
 
+  currentStage = 'create-fill-blank'
+  const fillBlank = await createManualQuestion(page, {
+    typeLabel: '填空题',
+    content: content.fillBlank,
+    referenceAnswer: 'root',
+    difficultyLabel: '简单',
+    analysis: 'Linux 默认超级用户为 root。',
+  })
+  createdQuestions.push(fillBlank)
+  results.fillBlankCreateAndEdit =
+    fillBlank.question_type === 'fill_blank' &&
+    fillBlank.correct_answer === null &&
+    fillBlank.options.length === 0 &&
+    fillBlank.reference_answer === 'root'
+
+  currentStage = 'edit-fill-blank'
+  await searchByKeyword(page, content.fillBlank)
+  await clickVisibleSelector(page, `[data-e2e="edit-question-${fillBlank.id}"]`)
+  await waitForDrawerOpen(page)
+  await clearAndType(
+    page,
+    '[data-e2e="question-reference-answer"]',
+    'root 用户',
+  )
+  const fillEditResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/v1/questions/${fillBlank.id}`) &&
+      response.request().method() === 'PUT' &&
+      response.status() === 200,
+  )
+  await clickButtonByText(page, '保存')
+  const editedFillBlank = await (await fillEditResponse).json()
+  await waitForDrawerClosed(page)
+  results.fillBlankCreateAndEdit =
+    results.fillBlankCreateAndEdit &&
+    editedFillBlank.reference_answer === 'root 用户' &&
+    editedFillBlank.correct_answer === null
+
+  currentStage = 'create-subjective'
+  const subjective = await createManualQuestion(page, {
+    typeLabel: '主观问答题',
+    content: content.subjective,
+    referenceAnswer: '容器共享宿主机内核，虚拟机运行完整的客户操作系统。',
+    difficultyLabel: '中等',
+    analysis: '',
+  })
+  createdQuestions.push(subjective)
+  results.subjectiveCreate =
+    subjective.question_type === 'subjective' &&
+    subjective.correct_answer === null &&
+    subjective.options.length === 0 &&
+    subjective.reference_answer?.includes('容器共享宿主机内核')
+
   currentStage = 'keyword-filter'
   await searchByKeyword(page, suffix)
   await Promise.all([
     waitForTableText(page, content.single),
     waitForTableText(page, content.multiple),
     waitForTableText(page, content.trueFalse),
+    waitForTableText(page, content.fillBlank),
+    waitForTableText(page, content.subjective),
   ])
   results.keywordFilter = true
 
@@ -223,6 +283,27 @@ try {
   await typeResponse
   await waitForTableText(page, content.multiple)
   results.typeFilter = true
+
+  currentStage = 'manual-type-filters'
+  await resetFilters(page)
+  await selectOption(page, '[data-e2e="question-type-filter"]', '填空题')
+  const fillFilterResponse = waitForQuestionListResponse(
+    page,
+    'question_type=fill_blank',
+  )
+  await clickButtonByText(page, '查询')
+  await fillFilterResponse
+  await waitForTableText(page, content.fillBlank)
+  await resetFilters(page)
+  await selectOption(page, '[data-e2e="question-type-filter"]', '主观问答题')
+  const subjectiveFilterResponse = waitForQuestionListResponse(
+    page,
+    'question_type=subjective',
+  )
+  await clickButtonByText(page, '查询')
+  await subjectiveFilterResponse
+  await waitForTableText(page, content.subjective)
+  results.manualTypeFilters = true
 
   currentStage = 'difficulty-filter'
   await resetFilters(page)
@@ -256,6 +337,8 @@ try {
     waitForTableText(page, content.single),
     waitForTableText(page, content.multiple),
     waitForTableText(page, content.trueFalse),
+    waitForTableText(page, content.fillBlank),
+    waitForTableText(page, content.subjective),
   ])
   results.adminSeesTeacherQuestions = true
 
@@ -293,7 +376,7 @@ try {
     { apiBaseUrl: apiUrl, ids: createdQuestions.map((question) => question.id) },
   )
   results.backendConsistent =
-    backendState.length === 3 &&
+    backendState.length === 5 &&
     backendState.every((question) => question.created_by.id === teacherAccount.id)
 
   currentStage = 'student-login-and-permission'
@@ -391,6 +474,34 @@ async function createTrueFalseQuestion(page) {
   await selectOption(page, '[data-e2e="question-difficulty"]', '简单')
   await page.type('#question-editor_content', content.trueFalse)
   await page.click('[data-e2e="true-false-answer"] input[value="true"]')
+  const createResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/v1/questions') &&
+      response.request().method() === 'POST' &&
+      response.status() === 201,
+  )
+  await clickButtonByText(page, '创建')
+  const question = await (await createResponse).json()
+  await waitForDrawerClosed(page)
+  return question
+}
+
+async function createManualQuestion(
+  page,
+  { typeLabel, content: questionContent, referenceAnswer, difficultyLabel, analysis },
+) {
+  await page.click('[data-e2e="create-question"]')
+  await waitForDrawerOpen(page)
+  await page.waitForSelector('#question-editor_content', { visible: true })
+  await selectOption(page, '[data-e2e="question-type"]', typeLabel)
+  await selectOption(page, '[data-e2e="question-difficulty"]', difficultyLabel)
+  await page.type('#question-editor_content', questionContent)
+  if (referenceAnswer) {
+    await page.type('[data-e2e="question-reference-answer"]', referenceAnswer)
+  }
+  if (analysis) {
+    await page.type('#question-editor_analysis', analysis)
+  }
   const createResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith('/api/v1/questions') &&
@@ -532,6 +643,13 @@ async function selectOption(page, selector, label) {
     )
     option?.parentElement?.click()
   }, label)
+  await page.waitForFunction(
+    (selectSelector, expectedLabel) =>
+      document.querySelector(selectSelector)?.textContent?.includes(expectedLabel),
+    {},
+    selector,
+    label,
+  )
 }
 
 async function clickButtonByText(page, text) {

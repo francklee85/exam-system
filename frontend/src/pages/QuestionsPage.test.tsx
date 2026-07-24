@@ -15,9 +15,11 @@ import {
 import { RoleRoute } from '../components/RoleRoute'
 import { useAuthStore } from '../stores/authStore'
 import {
+  fillBlankDetail,
   multipleChoiceDetail,
   questionListFixtures,
   singleChoiceDetail,
+  subjectiveDetail,
   trueFalseDetail,
 } from '../test/questionFixtures'
 import type { QuestionDetail, QuestionType } from '../types/question'
@@ -99,7 +101,7 @@ describe('question management routing', () => {
     vi.clearAllMocks()
     mockedListQuestions.mockResolvedValue({
       items: questionListFixtures,
-      total: 3,
+      total: 5,
       page: 1,
       page_size: 10,
     })
@@ -160,7 +162,7 @@ describe('question list', () => {
     vi.clearAllMocks()
     mockedListQuestions.mockResolvedValue({
       items: questionListFixtures,
-      total: 3,
+      total: 5,
       page: 1,
       page_size: 10,
     })
@@ -177,12 +179,16 @@ describe('question list', () => {
     expect(screen.getByText('单选题')).toBeInTheDocument()
     expect(screen.getByText('多选题')).toBeInTheDocument()
     expect(screen.getByText('判断题')).toBeInTheDocument()
-    expect(screen.getByText('简单')).toBeInTheDocument()
-    expect(screen.getByText('中等')).toBeInTheDocument()
+    expect(screen.getByText('填空题')).toBeInTheDocument()
+    expect(screen.getByText('主观问答题')).toBeInTheDocument()
+    expect(screen.getAllByText('自动阅卷', { selector: '.ant-tag' })).toHaveLength(3)
+    expect(screen.getAllByText('人工阅卷', { selector: '.ant-tag' })).toHaveLength(2)
+    expect(screen.getAllByText('简单').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('中等').length).toBeGreaterThan(0)
     expect(screen.getByText('困难')).toBeInTheDocument()
-    expect(screen.getAllByText('启用', { selector: '.ant-tag' })).toHaveLength(2)
+    expect(screen.getAllByText('启用', { selector: '.ant-tag' })).toHaveLength(4)
     expect(screen.getByText('禁用', { selector: '.ant-tag' })).toBeInTheDocument()
-    expect(screen.getAllByText('李老师')).toHaveLength(3)
+    expect(screen.getAllByText('李老师')).toHaveLength(5)
   })
 
   it('requests a new backend page when pagination changes', async () => {
@@ -225,6 +231,8 @@ describe('question list', () => {
 
   it.each([
     ['题型', '多选题', { question_type: 'multiple_choice' }],
+    ['题型', '填空题', { question_type: 'fill_blank' }],
+    ['题型', '主观问答题', { question_type: 'subjective' }],
     ['难度', '困难', { difficulty: 'hard' }],
     ['状态', '禁用', { status: 'disabled' }],
   ] as const)(
@@ -265,7 +273,7 @@ describe('question creation editors', () => {
     vi.clearAllMocks()
     mockedListQuestions.mockResolvedValue({
       items: questionListFixtures,
-      total: 3,
+      total: 5,
       page: 1,
       page_size: 10,
     })
@@ -328,6 +336,7 @@ describe('question creation editors', () => {
           { option_key: 'D', option_content: 'touch', sort_order: 4 },
         ],
         correct_answer: ['A'],
+        reference_answer: null,
       }),
     )
   })
@@ -436,6 +445,88 @@ describe('question creation editors', () => {
     )
   })
 
+  it('creates a fill-blank question without options or an automatic answer', async () => {
+    mockedCreateQuestion.mockResolvedValue(fillBlankDetail)
+    const user = userEvent.setup()
+    renderQuestionsPage()
+    await screen.findByText(singleChoiceDetail.content)
+    const drawer = await openCreateDrawer(user)
+    await switchQuestionType(user, drawer, '填空题')
+    await fillQuestionContent(user, drawer, ' Linux 默认超级用户名称是 ______。 ')
+
+    expect(within(drawer).queryByLabelText('选项 A 内容')).not.toBeInTheDocument()
+    expect(within(drawer).queryByText('正确答案')).not.toBeInTheDocument()
+    expect(
+      within(drawer).getByText(/参考答案仅供人工阅卷参考/u),
+    ).toBeInTheDocument()
+    await user.type(within(drawer).getByLabelText('参考答案（可选）'), ' root ')
+    await user.click(within(drawer).getByRole('button', { name: /创\s*建/u }))
+
+    await waitFor(() =>
+      expect(mockedCreateQuestion).toHaveBeenCalledWith({
+        question_type: 'fill_blank',
+        content: 'Linux 默认超级用户名称是 ______。',
+        difficulty: 'medium',
+        analysis: null,
+        options: [],
+        correct_answer: null,
+        reference_answer: 'root',
+      }),
+    )
+  })
+
+  it('creates a subjective question with an optional reference answer', async () => {
+    mockedCreateQuestion.mockResolvedValue(subjectiveDetail)
+    const user = userEvent.setup()
+    renderQuestionsPage()
+    await screen.findByText(singleChoiceDetail.content)
+    const drawer = await openCreateDrawer(user)
+    await switchQuestionType(user, drawer, '主观问答题')
+    await fillQuestionContent(user, drawer, subjectiveDetail.content)
+
+    expect(within(drawer).queryByLabelText('选项 A 内容')).not.toBeInTheDocument()
+    expect(within(drawer).getByText(/由教师人工给分/u)).toBeInTheDocument()
+    await user.type(
+      within(drawer).getByLabelText('参考答案（可选）'),
+      subjectiveDetail.reference_answer ?? '',
+    )
+    await user.click(within(drawer).getByRole('button', { name: /创\s*建/u }))
+
+    await waitFor(() =>
+      expect(mockedCreateQuestion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          question_type: 'subjective',
+          options: [],
+          correct_answer: null,
+          reference_answer: subjectiveDetail.reference_answer,
+        }),
+      ),
+    )
+  })
+
+  it('allows a manual question to omit its reference answer', async () => {
+    mockedCreateQuestion.mockResolvedValue({
+      ...fillBlankDetail,
+      reference_answer: null,
+    })
+    const user = userEvent.setup()
+    renderQuestionsPage()
+    await screen.findByText(singleChoiceDetail.content)
+    const drawer = await openCreateDrawer(user)
+    await switchQuestionType(user, drawer, '填空题')
+    await fillQuestionContent(user, drawer)
+    await user.click(within(drawer).getByRole('button', { name: /创\s*建/u }))
+
+    await waitFor(() =>
+      expect(mockedCreateQuestion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          correct_answer: null,
+          reference_answer: null,
+        }),
+      ),
+    )
+  })
+
   it('clears options and the old answer when switching single choice to true/false', async () => {
     const user = userEvent.setup()
     renderQuestionsPage()
@@ -473,6 +564,61 @@ describe('question creation editors', () => {
 
     expect(within(drawer).getByLabelText('选择 A 为正确答案')).not.toBeChecked()
   })
+
+  it('clears choice state for a manual type and initializes fresh choices on return', async () => {
+    const user = userEvent.setup()
+    renderQuestionsPage()
+    await screen.findByText(singleChoiceDetail.content)
+    const drawer = await openCreateDrawer(user)
+    await user.type(within(drawer).getByLabelText('选项 A 内容'), '旧选项')
+    await user.click(within(drawer).getByLabelText('选择 A 为正确答案'))
+    await switchQuestionType(user, drawer, '填空题')
+
+    expect(within(drawer).queryByLabelText('选项 A 内容')).not.toBeInTheDocument()
+    await switchQuestionType(user, drawer, '单选题')
+    expect(within(drawer).getByLabelText('选项 A 内容')).toHaveValue('')
+    expect(within(drawer).getByLabelText('选择 A 为正确答案')).not.toBeChecked()
+    expect(
+      within(drawer).queryByLabelText('参考答案（可选）'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps the reference answer between the two manual types', async () => {
+    const user = userEvent.setup()
+    renderQuestionsPage()
+    await screen.findByText(singleChoiceDetail.content)
+    const drawer = await openCreateDrawer(user)
+    await switchQuestionType(user, drawer, '填空题')
+    await user.type(within(drawer).getByLabelText('参考答案（可选）'), '保留内容')
+    await switchQuestionType(user, drawer, '主观问答题')
+
+    expect(within(drawer).getByLabelText('参考答案（可选）')).toHaveValue(
+      '保留内容',
+    )
+  })
+
+  it('clears a manual reference answer when switching to true/false', async () => {
+    const user = userEvent.setup()
+    renderQuestionsPage()
+    await screen.findByText(singleChoiceDetail.content)
+    const drawer = await openCreateDrawer(user)
+    await switchQuestionType(user, drawer, '主观问答题')
+    await user.type(within(drawer).getByLabelText('参考答案（可选）'), '旧参考')
+    await switchQuestionType(user, drawer, '判断题')
+    await fillQuestionContent(user, drawer)
+    await user.click(within(drawer).getByRole('radio', { name: '正确' }))
+    await user.click(within(drawer).getByRole('button', { name: /创\s*建/u }))
+
+    await waitFor(() =>
+      expect(mockedCreateQuestion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          question_type: 'true_false',
+          correct_answer: ['true'],
+          reference_answer: null,
+        }),
+      ),
+    )
+  })
 })
 
 describe('question editing and status', () => {
@@ -480,7 +626,7 @@ describe('question editing and status', () => {
     vi.clearAllMocks()
     mockedListQuestions.mockResolvedValue({
       items: questionListFixtures,
-      total: 3,
+      total: 5,
       page: 1,
       page_size: 10,
     })
@@ -542,6 +688,71 @@ describe('question editing and status', () => {
           correct_answer: ['A'],
           analysis: '更新后的解析',
         }),
+      ),
+    )
+  })
+
+  it.each([
+    ['fill_blank', fillBlankDetail],
+    ['subjective', subjectiveDetail],
+  ] satisfies Array<[QuestionType, QuestionDetail]>)(
+    'restores and updates a %s reference answer',
+    async (_questionType, detail) => {
+      mockedGetQuestion.mockResolvedValue(detail)
+      mockedUpdateQuestion.mockResolvedValue({
+        ...detail,
+        reference_answer: '更新后的参考答案',
+      })
+      const user = userEvent.setup()
+      renderQuestionsPage()
+      await screen.findByText(singleChoiceDetail.content)
+      await user.click(screen.getByRole('button', { name: `编辑题目 ${detail.id}` }))
+      const drawer = screen.getByRole('dialog', { name: '编辑题目' })
+      const referenceAnswer = await within(drawer).findByLabelText(
+        '参考答案（可选）',
+      )
+
+      expect(referenceAnswer).toHaveValue(detail.reference_answer)
+      expect(within(drawer).queryByLabelText('选项 A 内容')).not.toBeInTheDocument()
+      await user.clear(referenceAnswer)
+      await user.type(referenceAnswer, '更新后的参考答案')
+      await user.click(within(drawer).getByRole('button', { name: /保\s*存/u }))
+
+      await waitFor(() =>
+        expect(mockedUpdateQuestion).toHaveBeenCalledWith(
+          detail.id,
+          expect.objectContaining({
+            question_type: detail.question_type,
+            correct_answer: null,
+            reference_answer: '更新后的参考答案',
+            options: [],
+          }),
+        ),
+      )
+    },
+  )
+
+  it('can clear an existing manual reference answer', async () => {
+    mockedGetQuestion.mockResolvedValue(fillBlankDetail)
+    mockedUpdateQuestion.mockResolvedValue({
+      ...fillBlankDetail,
+      reference_answer: null,
+    })
+    const user = userEvent.setup()
+    renderQuestionsPage()
+    await screen.findByText(singleChoiceDetail.content)
+    await user.click(screen.getByRole('button', { name: '编辑题目 104' }))
+    const drawer = screen.getByRole('dialog', { name: '编辑题目' })
+    const referenceAnswer = await within(drawer).findByLabelText(
+      '参考答案（可选）',
+    )
+    await user.clear(referenceAnswer)
+    await user.click(within(drawer).getByRole('button', { name: /保\s*存/u }))
+
+    await waitFor(() =>
+      expect(mockedUpdateQuestion).toHaveBeenCalledWith(
+        fillBlankDetail.id,
+        expect.objectContaining({ reference_answer: null }),
       ),
     )
   })
