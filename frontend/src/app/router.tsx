@@ -7,6 +7,8 @@ import { AppLayout } from '../layouts/AppLayout'
 import { ComingSoonPage } from '../pages/ComingSoonPage'
 import { ClassesPage } from '../pages/ClassesPage'
 import { DashboardPage } from '../pages/DashboardPage'
+import { ExamDetailPage } from '../pages/ExamDetailPage'
+import { ExamsPage } from '../pages/ExamsPage'
 import { ForbiddenPage } from '../pages/ForbiddenPage'
 import { LoginPage } from '../pages/LoginPage'
 import { MajorsPage } from '../pages/MajorsPage'
@@ -31,6 +33,7 @@ const placeholderRoutes = navigationItems
         'classes',
         'questions',
         'papers',
+        'exams',
       ].includes(item.key),
   )
   .map((item) => ({
@@ -126,6 +129,22 @@ export const router = createBrowserRouter([
             element: (
               <RoleRoute allowedRoles={['admin', 'teacher']}>
                 <PaperDetailPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/exams',
+            element: (
+              <RoleRoute allowedRoles={['admin', 'teacher']}>
+                <ExamsPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/exams/:examId',
+            element: (
+              <RoleRoute allowedRoles={['admin', 'teacher']}>
+                <ExamDetailPage />
               </RoleRoute>
             ),
           },

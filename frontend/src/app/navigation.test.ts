@@ -17,6 +17,7 @@ describe('role navigation', () => {
       'classes',
       'questions',
       'papers',
+      'exams',
     ])
   })
 

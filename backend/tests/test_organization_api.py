@@ -222,6 +222,49 @@ def test_unauthenticated_user_cannot_access_major_api() -> None:
     assert response.headers["www-authenticate"] == "Bearer"
 
 
+def test_teacher_can_read_majors_for_exam_target_selection() -> None:
+    list_response = _request("GET", "/api/v1/majors?status=active", user_id=TEACHER_USER_ID)
+    detail_response = _request("GET", "/api/v1/majors/10", user_id=TEACHER_USER_ID)
+
+    assert list_response.status_code == 200
+    assert {item["id"] for item in list_response.json()["items"]} == {10, 12}
+    assert detail_response.status_code == 200
+    assert detail_response.json()["name"] == "云计算"
+
+
+def test_teacher_can_read_classes_for_exam_target_selection() -> None:
+    list_response = _request(
+        "GET",
+        "/api/v1/classes?major_id=10&status=active",
+        user_id=TEACHER_USER_ID,
+    )
+    detail_response = _request("GET", "/api/v1/classes/20", user_id=TEACHER_USER_ID)
+
+    assert list_response.status_code == 200
+    assert {item["id"] for item in list_response.json()["items"]} == {20, 22}
+    assert detail_response.status_code == 200
+    assert detail_response.json()["major"]["name"] == "云计算"
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("PUT", "/api/v1/majors/10", _major_payload()),
+        ("PATCH", "/api/v1/majors/10/status", {"status": "disabled"}),
+        ("PUT", "/api/v1/classes/20", _class_payload()),
+        ("PATCH", "/api/v1/classes/20/status", {"status": "disabled"}),
+    ],
+)
+def test_teacher_cannot_modify_organization_data(
+    method: str,
+    path: str,
+    payload: dict[str, JsonScalar],
+) -> None:
+    response = _request(method, path, json=payload, user_id=TEACHER_USER_ID)
+
+    assert response.status_code == 403
+
+
 def test_duplicate_major_code_returns_409() -> None:
     response = _request(
         "POST",

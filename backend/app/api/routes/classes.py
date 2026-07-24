@@ -12,11 +12,14 @@ from app.modules.classes.schemas import ClassCreate, ClassResponse, ClassUpdate
 router = APIRouter(
     prefix="/classes",
     tags=["classes"],
-    dependencies=[Depends(require_roles("admin"))],
 )
 
 
-@router.get("", response_model=PageResponse[ClassResponse])
+@router.get(
+    "",
+    response_model=PageResponse[ClassResponse],
+    dependencies=[Depends(require_roles("admin", "teacher"))],
+)
 async def list_classes(
     session: SessionDependency,
     page: Annotated[int, Query(ge=1)] = 1,
@@ -43,7 +46,11 @@ async def list_classes(
     )
 
 
-@router.get("/{class_id}", response_model=ClassResponse)
+@router.get(
+    "/{class_id}",
+    response_model=ClassResponse,
+    dependencies=[Depends(require_roles("admin", "teacher"))],
+)
 async def get_class(
     class_id: Annotated[int, Path(gt=0)],
     session: SessionDependency,
@@ -52,13 +59,22 @@ async def get_class(
     return ClassResponse.model_validate(class_record)
 
 
-@router.post("", response_model=ClassResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ClassResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def create_class(payload: ClassCreate, session: SessionDependency) -> ClassResponse:
     class_record = await service.create_class(session, payload)
     return ClassResponse.model_validate(class_record)
 
 
-@router.put("/{class_id}", response_model=ClassResponse)
+@router.put(
+    "/{class_id}",
+    response_model=ClassResponse,
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def update_class(
     class_id: Annotated[int, Path(gt=0)],
     payload: ClassUpdate,
@@ -68,7 +84,11 @@ async def update_class(
     return ClassResponse.model_validate(class_record)
 
 
-@router.patch("/{class_id}/status", response_model=ClassResponse)
+@router.patch(
+    "/{class_id}/status",
+    response_model=ClassResponse,
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def update_class_status(
     class_id: Annotated[int, Path(gt=0)],
     payload: StatusUpdate,

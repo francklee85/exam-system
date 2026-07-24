@@ -72,8 +72,8 @@ export const navigationItems: readonly NavigationItem[] = [
     key: 'exams',
     path: '/exams',
     label: '考试管理',
-    allowedRoles: ['teacher'],
-    description: '考试管理将在后续轮次实现',
+    allowedRoles: ['admin', 'teacher'],
+    description: '创建、发布考试并查看题目快照',
   },
   {
     key: 'results',

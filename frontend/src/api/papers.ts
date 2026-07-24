@@ -23,6 +23,23 @@ export async function listPapers(
   return response.data
 }
 
+export async function listAllPapers(
+  filters: Omit<PaperListParams, 'page' | 'page_size'> = {},
+): Promise<PaperListItem[]> {
+  const pageSize = 100
+  let page = 1
+  const papers: PaperListItem[] = []
+
+  while (true) {
+    const response = await listPapers({ ...filters, page, page_size: pageSize })
+    papers.push(...response.items)
+    if (papers.length >= response.total || response.items.length === 0) {
+      return papers
+    }
+    page += 1
+  }
+}
+
 export async function getPaper(paperId: number): Promise<PaperDetail> {
   const response = await apiClient.get<PaperDetail>(`${PAPERS_PATH}/${paperId}`)
   return response.data

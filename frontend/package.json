@@ -13,12 +13,14 @@
     "test:e2e:user-management": "node scripts/user-management-browser-smoke.mjs",
     "test:e2e:questions": "node scripts/questions-browser-smoke.mjs",
     "test:e2e:papers": "node scripts/papers-browser-smoke.mjs",
+    "test:e2e:exams": "node scripts/exams-browser-smoke.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",
     "antd": "^5.22.0",
     "axios": "^1.7.0",
+    "dayjs": "^1.11.21",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",

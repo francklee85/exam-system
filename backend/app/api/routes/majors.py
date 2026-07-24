@@ -12,11 +12,14 @@ from app.modules.majors.schemas import MajorCreate, MajorResponse, MajorUpdate
 router = APIRouter(
     prefix="/majors",
     tags=["majors"],
-    dependencies=[Depends(require_roles("admin"))],
 )
 
 
-@router.get("", response_model=PageResponse[MajorResponse])
+@router.get(
+    "",
+    response_model=PageResponse[MajorResponse],
+    dependencies=[Depends(require_roles("admin", "teacher"))],
+)
 async def list_majors(
     session: SessionDependency,
     page: Annotated[int, Query(ge=1)] = 1,
@@ -39,7 +42,11 @@ async def list_majors(
     )
 
 
-@router.get("/{major_id}", response_model=MajorResponse)
+@router.get(
+    "/{major_id}",
+    response_model=MajorResponse,
+    dependencies=[Depends(require_roles("admin", "teacher"))],
+)
 async def get_major(
     major_id: Annotated[int, Path(gt=0)],
     session: SessionDependency,
@@ -48,13 +55,22 @@ async def get_major(
     return MajorResponse.model_validate(major)
 
 
-@router.post("", response_model=MajorResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=MajorResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def create_major(payload: MajorCreate, session: SessionDependency) -> MajorResponse:
     major = await service.create_major(session, payload)
     return MajorResponse.model_validate(major)
 
 
-@router.put("/{major_id}", response_model=MajorResponse)
+@router.put(
+    "/{major_id}",
+    response_model=MajorResponse,
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def update_major(
     major_id: Annotated[int, Path(gt=0)],
     payload: MajorUpdate,
@@ -64,7 +80,11 @@ async def update_major(
     return MajorResponse.model_validate(major)
 
 
-@router.patch("/{major_id}/status", response_model=MajorResponse)
+@router.patch(
+    "/{major_id}/status",
+    response_model=MajorResponse,
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def update_major_status(
     major_id: Annotated[int, Path(gt=0)],
     payload: StatusUpdate,
