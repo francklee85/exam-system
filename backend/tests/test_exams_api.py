@@ -60,12 +60,14 @@ OTHER_TEACHER_ACTIVE_PAPER_ID = 33
 ADMIN_ACTIVE_PAPER_ID = 34
 CORRUPT_ACTIVE_PAPER_ID = 35
 EMPTY_ACTIVE_PAPER_ID = 36
+TEACHER_MIXED_ACTIVE_PAPER_ID = 37
 
 TEACHER_DRAFT_EXAM_ID = 40
 OTHER_TEACHER_DRAFT_EXAM_ID = 41
 TEACHER_PUBLISHED_EXAM_ID = 42
 TEACHER_NO_TARGET_EXAM_ID = 43
 CORRUPT_PAPER_EXAM_ID = 44
+TEACHER_MIXED_DRAFT_EXAM_ID = 45
 
 
 class AsyncSessionAdapter:
@@ -138,8 +140,13 @@ def _question(
     status: RecordStatus = RecordStatus.ACTIVE,
 ) -> Question:
     options: list[QuestionOption]
-    correct_answer: list[str]
-    if question_type == QuestionType.TRUE_FALSE:
+    correct_answer: list[str] | None
+    reference_answer: str | None = None
+    if question_type in {QuestionType.FILL_BLANK, QuestionType.SUBJECTIVE}:
+        options = []
+        correct_answer = None
+        reference_answer = f"{content}参考答案"
+    elif question_type == QuestionType.TRUE_FALSE:
         options = []
         correct_answer = ["true"]
     else:
@@ -173,6 +180,7 @@ def _question(
         question_type=question_type,
         content=content,
         correct_answer=correct_answer,
+        reference_answer=reference_answer,
         analysis=f"{content}解析",
         difficulty=QuestionDifficulty.EASY,
         status=status,
@@ -321,7 +329,19 @@ def _seed_test_data(session: Session) -> None:
     )
     other_question = _question(200, QuestionType.SINGLE_CHOICE, "其他教师题目")
     admin_question = _question(300, QuestionType.TRUE_FALSE, "管理员题目")
-    teacher.created_questions.extend([single, multiple, true_false])
+    fill_blank = _question(
+        103,
+        QuestionType.FILL_BLANK,
+        "Linux 默认超级用户名称是 ______。",
+    )
+    subjective = _question(
+        104,
+        QuestionType.SUBJECTIVE,
+        "请简述 Docker 容器和虚拟机的主要区别。",
+    )
+    teacher.created_questions.extend(
+        [single, multiple, true_false, fill_blank, subjective]
+    )
     other_teacher.created_questions.append(other_question)
     admin.created_questions.append(admin_question)
 
@@ -372,6 +392,18 @@ def _seed_test_data(session: Session) -> None:
         PaperStatus.ACTIVE,
         [],
     )
+    mixed_active = _paper(
+        TEACHER_MIXED_ACTIVE_PAPER_ID,
+        "五题型混合试卷",
+        PaperStatus.ACTIVE,
+        [
+            (1600, single, "10.00"),
+            (1601, multiple, "10.00"),
+            (1602, true_false, "10.00"),
+            (1603, fill_blank, "20.00"),
+            (1604, subjective, "50.00"),
+        ],
+    )
     teacher.created_papers.extend(
         [
             teacher_active,
@@ -379,6 +411,7 @@ def _seed_test_data(session: Session) -> None:
             teacher_disabled,
             corrupt_active,
             empty_active,
+            mixed_active,
         ]
     )
     other_teacher.created_papers.append(other_active)
@@ -442,6 +475,17 @@ def _seed_test_data(session: Session) -> None:
                 ExamStatus.DRAFT,
                 target=ExamTarget(
                     id=402,
+                    target_type=ExamTargetType.ALL,
+                    target_id=None,
+                ),
+            ),
+            _exam(
+                TEACHER_MIXED_DRAFT_EXAM_ID,
+                "五题型混合考试",
+                mixed_active,
+                ExamStatus.DRAFT,
+                target=ExamTarget(
+                    id=404,
                     target_type=ExamTargetType.ALL,
                     target_id=None,
                 ),
@@ -561,6 +605,22 @@ def _payload(
             "target_id": target_id,
         }
     return payload
+
+
+def _manual_question_payload(
+    question_type: str,
+    content: str,
+    reference_answer: str | None,
+) -> dict[str, object]:
+    return {
+        "question_type": question_type,
+        "content": content,
+        "options": [],
+        "correct_answer": None,
+        "reference_answer": reference_answer,
+        "analysis": f"{content}解析",
+        "difficulty": "easy",
+    }
 
 
 @pytest.mark.parametrize("user_id", [ADMIN_USER_ID, TEACHER_USER_ID])
@@ -759,7 +819,7 @@ def test_v1_request_cannot_configure_multiple_targets() -> None:
 
 def test_invalid_target_creation_leaves_no_exam() -> None:
     def inspect(session: Session) -> None:
-        assert session.scalar(select(func.count(Exam.id))) == 5
+        assert session.scalar(select(func.count(Exam.id))) == 6
 
     response = _request(
         "POST",
@@ -779,7 +839,7 @@ def test_exam_list_is_paginated_filterable_and_teacher_owned() -> None:
         user_id=TEACHER_USER_ID,
     )
     assert admin.status_code == 200
-    assert admin.json()["total"] == 5
+    assert admin.json()["total"] == 6
     assert len(admin.json()["items"]) == 2
     assert teacher.status_code == 200
     assert teacher.json()["total"] == 1
@@ -1095,6 +1155,77 @@ def test_published_snapshot_is_independent_from_question_and_paper_changes() -> 
             engine.dispose()
 
     asyncio.run(run())
+
+
+def test_mixed_five_type_exam_snapshot_freezes_manual_reference_answers() -> None:
+    async def scenario(client: AsyncClient) -> None:
+        headers = _headers(TEACHER_USER_ID)
+        publish = await client.post(
+            f"/api/v1/exams/{TEACHER_MIXED_DRAFT_EXAM_ID}/publish",
+            headers=headers,
+        )
+        assert publish.status_code == 200
+        assert publish.json()["snapshot_question_count"] == 5
+        assert Decimal(publish.json()["total_score"]) == Decimal("100.00")
+
+        before_response = await client.get(
+            f"/api/v1/exams/{TEACHER_MIXED_DRAFT_EXAM_ID}/questions",
+            headers=headers,
+        )
+        assert before_response.status_code == 200
+        before = before_response.json()
+        assert [item["question_type"] for item in before] == [
+            "single_choice",
+            "multiple_choice",
+            "true_false",
+            "fill_blank",
+            "subjective",
+        ]
+        assert [Decimal(item["score"]) for item in before] == [
+            Decimal("10.00"),
+            Decimal("10.00"),
+            Decimal("10.00"),
+            Decimal("20.00"),
+            Decimal("50.00"),
+        ]
+        assert [item["sort_order"] for item in before] == [1, 2, 3, 4, 5]
+        assert all(item["correct_answer"] is not None for item in before[:3])
+        assert all(item["reference_answer"] is None for item in before[:3])
+        assert all(item["options"] is None for item in before[2:])
+        assert all(item["correct_answer"] is None for item in before[3:])
+        assert before[3]["reference_answer"].endswith("参考答案")
+        assert before[4]["reference_answer"].endswith("参考答案")
+
+        fill_update = await client.put(
+            "/api/v1/questions/103",
+            headers=headers,
+            json=_manual_question_payload(
+                "fill_blank",
+                "填空题已修改",
+                "新的填空参考答案",
+            ),
+        )
+        subjective_update = await client.put(
+            "/api/v1/questions/104",
+            headers=headers,
+            json=_manual_question_payload(
+                "subjective",
+                "主观题已修改",
+                "新的主观参考答案",
+            ),
+        )
+        assert fill_update.status_code == 200
+        assert subjective_update.status_code == 200
+
+        after = (
+            await client.get(
+                f"/api/v1/exams/{TEACHER_MIXED_DRAFT_EXAM_ID}/questions",
+                headers=headers,
+            )
+        ).json()
+        assert after == before
+
+    _run_scenario(scenario)
 
 
 def test_student_cannot_read_snapshot_management_api() -> None:

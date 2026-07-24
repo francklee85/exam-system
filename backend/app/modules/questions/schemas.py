@@ -30,7 +30,8 @@ class QuestionWrite(BaseModel):
     question_type: QuestionType
     content: str = Field(min_length=1)
     options: list[QuestionOptionCreate] = Field(default_factory=list)
-    correct_answer: list[StrictStr]
+    correct_answer: list[StrictStr] | None = None
+    reference_answer: str | None = None
     analysis: str | None = None
     difficulty: QuestionDifficulty
 
@@ -39,9 +40,9 @@ class QuestionWrite(BaseModel):
     def normalize_content(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
 
-    @field_validator("analysis", mode="before")
+    @field_validator("reference_answer", "analysis", mode="before")
     @classmethod
-    def normalize_analysis(cls, value: object) -> object:
+    def normalize_optional_text(cls, value: object) -> object:
         if isinstance(value, str):
             value = value.strip()
             return value or None
@@ -90,5 +91,6 @@ class QuestionListItem(BaseModel):
 
 class QuestionResponse(QuestionListItem):
     options: list[QuestionOptionResponse]
-    correct_answer: list[str]
+    correct_answer: list[str] | None
+    reference_answer: str | None
     analysis: str | None

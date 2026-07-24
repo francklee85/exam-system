@@ -170,7 +170,8 @@ class ExamQuestionSnapshotResponse(BaseModel):
     question_type: QuestionType
     content: str
     options: list[ExamSnapshotOptionResponse] | None
-    correct_answer: list[str]
+    correct_answer: list[str] | None
+    reference_answer: str | None
     analysis: str | None
     score: Decimal
     sort_order: int
@@ -192,6 +193,7 @@ class ExamQuestionSnapshotResponse(BaseModel):
                 else None
             ),
             correct_answer=snapshot.correct_answer,
+            reference_answer=snapshot.reference_answer,
             analysis=snapshot.analysis,
             score=snapshot.score,
             sort_order=snapshot.sort_order,

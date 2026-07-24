@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from sqlalchemy import Select, func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -12,7 +12,13 @@ from app.core.exceptions import (
 )
 from app.db.enums import RecordStatus
 from app.modules.auth.permissions import effective_role_codes
-from app.modules.questions.enums import QuestionDifficulty, QuestionType
+from app.modules.questions.enums import (
+    AUTO_GRADED_QUESTION_TYPES,
+    CHOICE_QUESTION_TYPES,
+    MANUAL_GRADED_QUESTION_TYPES,
+    QuestionDifficulty,
+    QuestionType,
+)
 from app.modules.questions.models import Question, QuestionOption
 from app.modules.questions.schemas import QuestionCreate, QuestionUpdate
 from app.modules.users.models import User
@@ -30,7 +36,8 @@ class NormalizedQuestion:
     question_type: QuestionType
     content: str
     options: tuple[NormalizedOption, ...]
-    correct_answer: list[str]
+    correct_answer: list[str] | None
+    reference_answer: str | None
     analysis: str | None
     difficulty: QuestionDifficulty
 
@@ -49,15 +56,25 @@ def _normalize_question(payload: QuestionCreate | QuestionUpdate) -> NormalizedQ
     if len(option_keys) != len(set(option_keys)):
         raise InvalidRequestError("选项编码不能重复")
 
-    if payload.question_type == QuestionType.TRUE_FALSE:
+    if payload.question_type in MANUAL_GRADED_QUESTION_TYPES:
+        if options:
+            raise InvalidRequestError("人工阅卷题不能包含选项")
+        if payload.correct_answer is not None:
+            raise InvalidRequestError("人工阅卷题的正确答案必须为空")
+        answers = None
+    elif payload.question_type == QuestionType.TRUE_FALSE:
         if options:
             raise InvalidRequestError("判断题不能包含选项")
+        if payload.correct_answer is None:
+            raise InvalidRequestError("自动阅卷题必须提供正确答案")
         answers = [item.strip() for item in payload.correct_answer]
         if len(answers) != 1 or answers[0] not in {"true", "false"}:
             raise InvalidRequestError("判断题正确答案必须严格为 true 或 false")
-    else:
+    elif payload.question_type in CHOICE_QUESTION_TYPES:
         if len(options) < 2:
             raise InvalidRequestError("选择题至少需要两个选项")
+        if payload.correct_answer is None:
+            raise InvalidRequestError("自动阅卷题必须提供正确答案")
         answers = [item.strip().upper() for item in payload.correct_answer]
         if any(not item for item in answers):
             raise InvalidRequestError("正确答案不能为空")
@@ -71,12 +88,22 @@ def _normalize_question(payload: QuestionCreate | QuestionUpdate) -> NormalizedQ
         if missing_answers:
             raise InvalidRequestError(f"正确答案对应的选项不存在：{', '.join(missing_answers)}")
         answers = sorted(answers)
+    else:  # pragma: no cover - the enum prevents unsupported values
+        raise InvalidRequestError("不支持的题型")
+
+    if payload.question_type in AUTO_GRADED_QUESTION_TYPES:
+        if payload.reference_answer is not None:
+            raise InvalidRequestError("自动阅卷题不能设置人工阅卷参考答案")
+        reference_answer = None
+    else:
+        reference_answer = payload.reference_answer
 
     return NormalizedQuestion(
         question_type=payload.question_type,
         content=payload.content,
         options=options,
         correct_answer=answers,
+        reference_answer=reference_answer,
         analysis=payload.analysis,
         difficulty=payload.difficulty,
     )
@@ -110,6 +137,20 @@ async def _commit(session: AsyncSession) -> None:
     except IntegrityError:
         await session.rollback()
         raise ResourceConflictError("题目数据存在冲突") from None
+    except SQLAlchemyError:
+        await session.rollback()
+        raise
+
+
+async def _flush(session: AsyncSession) -> None:
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        raise ResourceConflictError("题目数据存在冲突") from None
+    except SQLAlchemyError:
+        await session.rollback()
+        raise
 
 
 async def create_question(
@@ -122,6 +163,7 @@ async def create_question(
         question_type=data.question_type,
         content=data.content,
         correct_answer=data.correct_answer,
+        reference_answer=data.reference_answer,
         analysis=data.analysis,
         difficulty=data.difficulty,
         status=RecordStatus.ACTIVE,
@@ -202,10 +244,11 @@ async def update_question(
     question.question_type = data.question_type
     question.content = data.content
     question.correct_answer = data.correct_answer
+    question.reference_answer = data.reference_answer
     question.analysis = data.analysis
     question.difficulty = data.difficulty
     question.options.clear()
-    await session.flush()
+    await _flush(session)
     for option in _build_options(data):
         option.question = question
         session.add(option)

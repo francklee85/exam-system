@@ -192,7 +192,7 @@ def test_mysql_question_bank_api_flow() -> None:
                 assert student_response.status_code == 403
 
                 admin_list_response = await client.get(
-                    "/api/v1/questions",
+                    "/api/v1/questions?page_size=100",
                     headers=admin_headers,
                 )
                 assert admin_list_response.status_code == 200

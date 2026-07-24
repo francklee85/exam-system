@@ -22,7 +22,12 @@ from app.modules.exams.schemas import (
 from app.modules.majors.models import Major
 from app.modules.papers.enums import PaperStatus
 from app.modules.papers.models import Paper, PaperQuestion
-from app.modules.questions.enums import QuestionType
+from app.modules.questions.enums import (
+    AUTO_GRADED_QUESTION_TYPES,
+    CHOICE_QUESTION_TYPES,
+    MANUAL_GRADED_QUESTION_TYPES,
+    QuestionType,
+)
 from app.modules.questions.models import Question
 from app.modules.users.models import User
 
@@ -424,10 +429,24 @@ def _validate_snapshot_source(item: PaperQuestion) -> None:
     if item.score <= ZERO_SCORE:
         raise ResourceConflictError("试卷包含分值不合法的题目")
 
+    if question.question_type in MANUAL_GRADED_QUESTION_TYPES:
+        if question.options or question.correct_answer is not None:
+            raise ResourceConflictError("试卷包含数据不完整的人工阅卷题")
+        return
+
+    if (
+        question.question_type in AUTO_GRADED_QUESTION_TYPES
+        and question.reference_answer is not None
+    ):
+        raise ResourceConflictError("试卷包含参考答案异常的自动阅卷题")
+
     if question.question_type == QuestionType.TRUE_FALSE:
         if question.options or question.correct_answer not in (["true"], ["false"]):
             raise ResourceConflictError("试卷包含数据不完整的判断题")
         return
+
+    if question.question_type not in CHOICE_QUESTION_TYPES:
+        raise ResourceConflictError("试卷包含不支持的题型")
 
     option_keys = [option.option_key for option in question.options]
     option_orders = [option.sort_order for option in question.options]
@@ -442,6 +461,8 @@ def _validate_snapshot_source(item: PaperQuestion) -> None:
     ):
         raise ResourceConflictError("试卷包含选项不完整的选择题")
     answers = question.correct_answer
+    if answers is None:
+        raise ResourceConflictError("试卷包含缺少正确答案的选择题")
     if len(answers) != len(set(answers)) or not set(answers).issubset(option_keys):
         raise ResourceConflictError("试卷包含正确答案异常的选择题")
     if question.question_type == QuestionType.SINGLE_CHOICE and len(answers) != 1:
@@ -454,7 +475,7 @@ def _snapshot_from_paper_question(item: PaperQuestion) -> ExamQuestion:
     question = item.question
     options = (
         None
-        if question.question_type == QuestionType.TRUE_FALSE
+        if question.question_type not in CHOICE_QUESTION_TYPES
         else [
             {
                 "key": option.option_key,
@@ -469,7 +490,12 @@ def _snapshot_from_paper_question(item: PaperQuestion) -> ExamQuestion:
         question_type=question.question_type,
         content=question.content,
         options=options,
-        correct_answer=list(question.correct_answer),
+        correct_answer=(
+            list(question.correct_answer)
+            if question.correct_answer is not None
+            else None
+        ),
+        reference_answer=question.reference_answer,
         analysis=question.analysis,
         score=item.score,
         sort_order=item.sort_order,

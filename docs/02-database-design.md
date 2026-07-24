@@ -12,7 +12,7 @@
 * 按全部学生、专业或班级分配考试
 * 考试题目快照
 * 学生在线作答
-* 自动评分
+* 客观题自动评分与人工题阅卷状态设计
 * 成绩查询
 
 数据库技术栈：
@@ -315,11 +315,13 @@ majors
 
 保存题目主体。
 
-V1 支持：
+V1 支持五种题型：
 
-* 单选题
-* 多选题
-* 判断题
+* `single_choice`：单选题，自动阅卷
+* `multiple_choice`：多选题，自动阅卷
+* `true_false`：判断题，自动阅卷
+* `fill_blank`：填空题，人工阅卷
+* `subjective`：主观问答题，人工阅卷
 
 ## 10.2 字段
 
@@ -328,7 +330,8 @@ V1 支持：
 | id             | BIGINT      | PK, AUTO_INCREMENT | 主键   |
 | question_type  | VARCHAR(20) | NOT NULL           | 题型   |
 | content        | TEXT        | NOT NULL           | 题干   |
-| correct_answer | JSON        | NOT NULL           | 正确答案 |
+| correct_answer | JSON        | NULL               | 自动阅卷标准答案 |
+| reference_answer | TEXT      | NULL               | 人工阅卷参考答案 |
 | analysis       | TEXT        | NULL               | 答案解析 |
 | difficulty     | VARCHAR(20) | NOT NULL           | 难度   |
 | status         | VARCHAR(20) | NOT NULL           | 状态   |
@@ -342,6 +345,8 @@ V1 支持：
 single_choice
 multiple_choice
 true_false
+fill_blank
+subjective
 ```
 
 难度：
@@ -367,9 +372,9 @@ questions.created_by → users.id
 
 ---
 
-# 11. correct_answer 设计
+# 11. correct_answer 与 reference_answer 设计
 
-统一使用 JSON 数组。
+`correct_answer` 仅用于自动阅卷题，统一使用 JSON 数组。
 
 单选：
 
@@ -397,15 +402,35 @@ questions.created_by → users.id
 
 多选评分时按集合比较，不考虑顺序。
 
+自动阅卷题必须拥有合法的 `correct_answer`，且
+`reference_answer = NULL`。
+
+人工阅卷题不使用自动评分标准：
+
+```text
+correct_answer = NULL
+```
+
+不得使用空数组 `[]` 代替空值。`fill_blank` 和 `subjective` 可以保存
+可选的 `reference_answer`，供教师阅卷参考，但系统不得根据该字段自动判分。
+`reference_answer` 允许为空。
+
+`reference_answer` 是教师评分时参考的作答内容；`analysis` 是知识解析和解题说明，
+两者语义不同，不得混用。
+
+由于旧 Schema 要求 `correct_answer NOT NULL`，当数据库已经存在人工题或人工题
+快照时，降级回旧 Schema 无法无损完成。对应 Migration 必须明确拒绝这种降级，
+由运维先显式迁移或清理人工题数据；禁止伪造 `correct_answer`。
+
 ---
 
 # 12. question_options 题目选项表
 
 ## 12.1 作用
 
-用于单选、多选题的选项。
+仅用于单选、多选题的选项。
 
-判断题不创建 question_options。
+判断、填空、主观问答题均不创建 `question_options`。
 
 ## 12.2 字段
 
@@ -458,6 +483,40 @@ question_options.question_id → questions.id
 
 * 不创建 question_options
 * correct_answer 只能是 `["true"]` 或 `["false"]`
+
+## 13.4 填空题
+
+必须：
+
+* 不创建 question_options
+* `correct_answer = NULL`
+* `reference_answer` 可为空
+* 学生未来提交一段文本，由教师整体人工评分
+
+V1 不设计多空、每空评分、多答案、同义词或自动匹配。
+
+## 13.5 主观问答题
+
+必须：
+
+* 不创建 question_options
+* `correct_answer = NULL`
+* `reference_answer` 可为空
+* 教师在题目满分范围内人工给分，允许部分分
+
+## 13.6 评分分类
+
+业务代码使用一处集中定义：
+
+```text
+AUTO_GRADED_QUESTION_TYPES =
+  single_choice, multiple_choice, true_false
+
+MANUAL_GRADED_QUESTION_TYPES =
+  fill_blank, subjective
+```
+
+不得在各模块重复维护题型分类。
 
 ---
 
@@ -540,6 +599,10 @@ SUM(paper_questions.score)
 ```
 
 后端负责重新计算 `papers.total_score`。
+
+五种题型都可以加入试卷。`paper_questions` 不冗余保存阅卷方式，评分方式由
+关联题目的 `question_type` 确定。包含客观题与人工题的混合试卷可以正常启用，
+启用规则仍为至少一题且总分大于 0。
 
 ---
 
@@ -734,7 +797,8 @@ paper_questions
 | question_type        | VARCHAR(20)  | NOT NULL           | 题型快照    |
 | content              | TEXT         | NOT NULL           | 题干快照    |
 | options              | JSON         | NULL               | 选项快照    |
-| correct_answer       | JSON         | NOT NULL           | 正确答案快照  |
+| correct_answer       | JSON         | NULL               | 自动阅卷标准答案快照 |
+| reference_answer     | TEXT         | NULL               | 人工阅卷参考答案快照 |
 | analysis             | TEXT         | NULL               | 解析快照    |
 | score                | DECIMAL(6,2) | NOT NULL           | 分值快照    |
 | sort_order           | INT          | NOT NULL           | 顺序快照    |
@@ -769,7 +833,7 @@ exam_questions.exam_id → exams.id
 ]
 ```
 
-判断题可以：
+判断、填空、主观问答题均为：
 
 ```json
 null
@@ -781,6 +845,20 @@ null
 正确
 错误
 ```
+
+自动阅卷题快照：
+
+* 复制 `correct_answer`
+* `reference_answer = NULL`
+
+人工阅卷题快照：
+
+* `options = NULL`
+* `correct_answer = NULL`
+* 复制 `reference_answer`
+
+`reference_answer` 与题干、答案、分值和顺序一样属于不可变考试快照。发布后
+修改原题参考答案不得影响已经发布的考试。
 
 ---
 
@@ -842,6 +920,7 @@ ExamAnswer
 | exam_id         | BIGINT       | NOT NULL, FK       | 考试 ID    |
 | student_user_id | BIGINT       | NOT NULL, FK       | 学生用户 ID  |
 | status          | VARCHAR(20)  | NOT NULL           | 作答状态     |
+| grading_status  | VARCHAR(30)  | NOT NULL           | 阅卷状态     |
 | started_at      | DATETIME     | NOT NULL           | 开始时间     |
 | deadline_at     | DATETIME     | NOT NULL           | 本次实际截止时间 |
 | submitted_at    | DATETIME     | NULL               | 提交时间     |
@@ -856,6 +935,18 @@ ExamAnswer
 in_progress
 submitted
 ```
+
+作答状态与阅卷状态分离，避免把答题生命周期和评分生命周期混在一个字段中。
+未来 `grading_status` 至少考虑：
+
+```text
+not_started
+pending_manual_grading
+graded
+```
+
+纯客观题提交并自动评分完成后可直接进入 `graded`。包含人工题时，提交后进入
+`pending_manual_grading`；全部人工题阅卷完成后才进入 `graded`。
 
 V1 每个学生每场考试只允许一次：
 
@@ -938,6 +1029,10 @@ status = in_progress
 | answer           | JSON         | NULL               | 学生答案           |
 | is_correct       | BOOLEAN      | NULL               | 是否正确           |
 | score_awarded    | DECIMAL(6,2) | NULL               | 获得分数           |
+| grading_status   | VARCHAR(20)  | NOT NULL           | 单题阅卷状态         |
+| grader_id        | BIGINT       | NULL, FK           | 人工阅卷教师 ID      |
+| grading_comment  | TEXT         | NULL               | 阅卷评语             |
+| graded_at        | DATETIME     | NULL               | 阅卷完成时间          |
 | answered_at      | DATETIME     | NULL               | 最后答题时间         |
 | created_at       | DATETIME     | NOT NULL           | 创建时间           |
 | updated_at       | DATETIME     | NOT NULL           | 更新时间           |
@@ -953,13 +1048,43 @@ UNIQUE(attempt_id, exam_question_id)
 ```text
 exam_answers.attempt_id → exam_attempts.id
 exam_answers.exam_question_id → exam_questions.id
+exam_answers.grader_id → users.id
 ```
+
+自动阅卷题：
+
+```text
+grading_status = graded
+is_correct = 系统判定结果
+score_awarded = 系统计算分值
+grader_id = NULL
+```
+
+人工阅卷题提交时：
+
+```text
+grading_status = pending
+is_correct = NULL
+score_awarded = NULL
+```
+
+教师阅卷完成后：
+
+```text
+grading_status = graded
+score_awarded = 教师给分
+grader_id = 阅卷教师
+graded_at = 阅卷时间
+```
+
+人工题允许部分得分；`is_correct` 主要服务于客观题，对人工题可以保持 NULL。
+以上字段属于后续作答/阅卷模块设计，本轮不创建相关表或 Migration。
 
 ---
 
 # 27. 学生答案格式
 
-与正确答案保持一致。
+答案格式按题型区分。
 
 单选：
 
@@ -977,6 +1102,12 @@ exam_answers.exam_question_id → exam_questions.id
 
 ```json
 ["true"]
+```
+
+填空和主观问答：
+
+```json
+"学生提交的一段文本"
 ```
 
 未作答可以：
@@ -1028,9 +1159,20 @@ score_awarded
 
 可以保持 NULL。
 
+学生考试进行中的题目响应不得返回：
+
+```text
+correct_answer
+reference_answer
+analysis
+```
+
+`reference_answer` 与 `correct_answer` 同属敏感阅卷信息。学生作答接口必须使用
+独立响应 Schema，禁止复用题库管理或考试快照管理 Schema。
+
 ---
 
-# 29. 自动评分规则
+# 29. 自动评分与人工评分规则
 
 提交考试时统一评分。
 
@@ -1066,6 +1208,14 @@ set(student_answer) == set(correct_answer)
 
 答案一致即得分。
 
+## 填空题
+
+永远人工评分，不执行文本、大小写、同义词或模糊匹配。
+
+## 主观问答题
+
+永远人工评分，教师可以在该题满分范围内给部分分。
+
 ---
 
 # 30. 提交考试流程
@@ -1083,17 +1233,13 @@ set(student_answer) == set(correct_answer)
 ↓
 获取全部 exam_answers
 ↓
-逐题评分
+自动评分客观题
 ↓
 更新 is_correct
 ↓
 更新 score_awarded
 ↓
-计算总分
-↓
-更新 exam_attempt.score
-↓
-计算 is_passed
+如有人工题则 grading_status = pending_manual_grading
 ↓
 status = submitted
 ↓
@@ -1103,6 +1249,16 @@ submitted_at = 当前时间
 ```
 
 整个流程必须使用数据库事务。
+
+纯客观题在提交事务中即可汇总最终分数并计算 `is_passed`。包含人工题时，
+自动评分阶段只能得到客观题小计，`exam_attempts.score` 和 `is_passed` 不得
+作为最终结果；全部人工题完成后再执行：
+
+```text
+客观题得分 + 人工题得分 = 最终成绩
+```
+
+然后写入最终 `score`、`is_passed`，并将 `grading_status` 改为 `graded`。
 
 ---
 
@@ -1538,15 +1694,19 @@ Question
 
 9. V1 每个学生每场考试只允许一次 ExamAttempt。
 
-10. 学生答案和正确答案统一使用 JSON 数组格式。
+10. 客观题答案和正确答案使用 JSON 数组；填空、主观题答案是一段文本。
 
-11. 客观题提交时由后端统一自动评分。
+11. 单选、多选、判断题由后端自动评分；填空、主观问答题永远人工评分。
 
-12. 最终成绩直接保存在 exam_attempts，不额外创建冗余 results 表。
+12. 自动评分题必须保存 `correct_answer`，人工评分题必须为 NULL；人工题可保存
+    可选的 `reference_answer`。
 
-13. 核心提交、发布、评分流程必须使用数据库事务。
+13. 作答状态与阅卷状态分离；人工题未全部阅完前不得生成最终及格结论。
 
-14. 权限和考试范围判断必须以后端为准。
+14. 最终成绩直接保存在 exam_attempts，不额外创建冗余 results 表。
 
-15. 已产生历史业务数据的核心实体优先禁用，不物理删除。
+15. 核心提交、发布、评分流程必须使用数据库事务。
 
+16. 权限和考试范围判断必须以后端为准。
+
+17. 已产生历史业务数据的核心实体优先禁用，不物理删除。

@@ -44,7 +44,8 @@ class Question(TimestampMixin, Base):
         nullable=False,
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    correct_answer: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    correct_answer: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    reference_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
     difficulty: Mapped[QuestionDifficulty] = mapped_column(
         question_difficulty_column(),

@@ -7,6 +7,30 @@ class QuestionType(StrEnum):
     SINGLE_CHOICE = "single_choice"
     MULTIPLE_CHOICE = "multiple_choice"
     TRUE_FALSE = "true_false"
+    FILL_BLANK = "fill_blank"
+    SUBJECTIVE = "subjective"
+
+
+CHOICE_QUESTION_TYPES: frozenset[QuestionType] = frozenset(
+    {
+        QuestionType.SINGLE_CHOICE,
+        QuestionType.MULTIPLE_CHOICE,
+    }
+)
+
+AUTO_GRADED_QUESTION_TYPES: frozenset[QuestionType] = frozenset(
+    {
+        *CHOICE_QUESTION_TYPES,
+        QuestionType.TRUE_FALSE,
+    }
+)
+
+MANUAL_GRADED_QUESTION_TYPES: frozenset[QuestionType] = frozenset(
+    {
+        QuestionType.FILL_BLANK,
+        QuestionType.SUBJECTIVE,
+    }
+)
 
 
 class QuestionDifficulty(StrEnum):

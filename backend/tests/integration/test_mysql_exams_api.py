@@ -66,6 +66,22 @@ def _true_false_payload(content: str) -> dict[str, object]:
     }
 
 
+def _manual_payload(
+    question_type: str,
+    content: str,
+    reference_answer: str | None,
+) -> dict[str, object]:
+    return {
+        "question_type": question_type,
+        "content": content,
+        "options": [],
+        "correct_answer": None,
+        "reference_answer": reference_answer,
+        "analysis": f"{content}解析",
+        "difficulty": "easy",
+    }
+
+
 @pytest.mark.skipif(
     not RUN_MYSQL_EXAM_TESTS,
     reason="set RUN_MYSQL_EXAM_TESTS=1 for the dedicated MySQL exam API test",
@@ -141,6 +157,16 @@ def test_mysql_exam_publish_and_snapshot_flow() -> None:
                     _choice_payload("Linux 中查看当前目录的命令？"),
                     _choice_payload("哪些属于 Linux 文件系统？", multiple=True),
                     _true_false_payload("Kubernetes 是容器编排系统。"),
+                    _manual_payload(
+                        "fill_blank",
+                        "Linux 默认超级用户名称是 ______。",
+                        "root",
+                    ),
+                    _manual_payload(
+                        "subjective",
+                        "请简述 Docker 容器和虚拟机的主要区别。",
+                        "容器共享宿主机内核，虚拟机包含完整客户机操作系统。",
+                    ),
                 ]
                 questions: list[dict[str, object]] = []
                 for payload in question_payloads:
@@ -167,14 +193,16 @@ def test_mysql_exam_publish_and_snapshot_flow() -> None:
                     headers=teacher_headers,
                     json={
                         "items": [
-                            {"question_id": questions[0]["id"], "score": "2.50"},
-                            {"question_id": questions[1]["id"], "score": "5.00"},
-                            {"question_id": questions[2]["id"], "score": "2.50"},
+                            {"question_id": questions[0]["id"], "score": "10.00"},
+                            {"question_id": questions[1]["id"], "score": "10.00"},
+                            {"question_id": questions[2]["id"], "score": "10.00"},
+                            {"question_id": questions[3]["id"], "score": "20.00"},
+                            {"question_id": questions[4]["id"], "score": "50.00"},
                         ]
                     },
                 )
                 assert add_response.status_code == 200
-                assert Decimal(add_response.json()["total_score"]) == Decimal("10.00")
+                assert Decimal(add_response.json()["total_score"]) == Decimal("100.00")
                 activate = await client.patch(
                     f"/api/v1/papers/{paper['id']}/status",
                     headers=teacher_headers,
@@ -209,7 +237,7 @@ def test_mysql_exam_publish_and_snapshot_flow() -> None:
                         "start_time": start_time.isoformat(),
                         "end_time": end_time.isoformat(),
                         "duration_minutes": 90,
-                        "pass_score": "6.00",
+                        "pass_score": "60.00",
                         "target": {
                             "target_type": "class",
                             "target_id": target_class_id,
@@ -230,8 +258,8 @@ def test_mysql_exam_publish_and_snapshot_flow() -> None:
                 assert published["status"] == "published"
                 assert published["runtime_status"] == "not_started"
                 assert published["published_at"] is not None
-                assert Decimal(published["total_score"]) == Decimal("10.00")
-                assert published["snapshot_question_count"] == 3
+                assert Decimal(published["total_score"]) == Decimal("100.00")
+                assert published["snapshot_question_count"] == 5
 
                 snapshots_response = await client.get(
                     f"/api/v1/exams/{exam['id']}/questions",
@@ -239,15 +267,33 @@ def test_mysql_exam_publish_and_snapshot_flow() -> None:
                 )
                 assert snapshots_response.status_code == 200
                 snapshots_before = snapshots_response.json()
-                assert len(snapshots_before) == 3
-                assert [item["sort_order"] for item in snapshots_before] == [1, 2, 3]
+                assert len(snapshots_before) == 5
+                assert [item["sort_order"] for item in snapshots_before] == [
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                ]
                 assert [Decimal(item["score"]) for item in snapshots_before] == [
-                    Decimal("2.50"),
-                    Decimal("5.00"),
-                    Decimal("2.50"),
+                    Decimal("10.00"),
+                    Decimal("10.00"),
+                    Decimal("10.00"),
+                    Decimal("20.00"),
+                    Decimal("50.00"),
                 ]
                 assert snapshots_before[0]["options"][0]["key"] == "A"
                 assert snapshots_before[0]["correct_answer"] == ["A"]
+                assert all(
+                    item["correct_answer"] is not None
+                    for item in snapshots_before[:3]
+                )
+                assert all(
+                    item["correct_answer"] is None for item in snapshots_before[3:]
+                )
+                assert all(item["options"] is None for item in snapshots_before[2:])
+                assert snapshots_before[3]["reference_answer"] == "root"
+                assert "宿主机内核" in snapshots_before[4]["reference_answer"]
 
                 modified_payload = _choice_payload("原题修改后的题干")
                 modified_payload["correct_answer"] = ["B"]
@@ -257,6 +303,27 @@ def test_mysql_exam_publish_and_snapshot_flow() -> None:
                     json=modified_payload,
                 )
                 assert update_source.status_code == 200
+
+                update_fill_reference = await client.put(
+                    f"/api/v1/questions/{questions[3]['id']}",
+                    headers=teacher_headers,
+                    json=_manual_payload(
+                        "fill_blank",
+                        "原填空题已修改",
+                        "new-root",
+                    ),
+                )
+                update_subjective_reference = await client.put(
+                    f"/api/v1/questions/{questions[4]['id']}",
+                    headers=teacher_headers,
+                    json=_manual_payload(
+                        "subjective",
+                        "原主观题已修改",
+                        "新的主观参考答案",
+                    ),
+                )
+                assert update_fill_reference.status_code == 200
+                assert update_subjective_reference.status_code == 200
 
                 to_draft = await client.patch(
                     f"/api/v1/papers/{paper['id']}/status",
@@ -290,7 +357,7 @@ def test_mysql_exam_publish_and_snapshot_flow() -> None:
                     headers=teacher_headers,
                 )
                 assert snapshots_after.json() == snapshots_before
-                assert Decimal(exam_after.json()["total_score"]) == Decimal("10.00")
+                assert Decimal(exam_after.json()["total_score"]) == Decimal("100.00")
 
                 repeated = await client.post(
                     f"/api/v1/exams/{exam['id']}/publish",
@@ -304,7 +371,7 @@ def test_mysql_exam_publish_and_snapshot_flow() -> None:
                             headers=teacher_headers,
                         )
                     ).json()
-                ) == 3
+                ) == 5
 
                 locked_update = await client.put(
                     f"/api/v1/exams/{exam['id']}",

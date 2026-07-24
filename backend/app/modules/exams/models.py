@@ -151,7 +151,8 @@ class ExamQuestion(CreatedAtMixin, Base):
         JSON,
         nullable=True,
     )
-    correct_answer: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    correct_answer: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    reference_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
     score: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False)

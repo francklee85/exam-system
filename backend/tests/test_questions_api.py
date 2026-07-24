@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import cast
 
 import pytest
@@ -225,6 +225,36 @@ def _request(
     return asyncio.run(perform_request())
 
 
+def _run_scenario(callback: Callable[[AsyncClient], Awaitable[None]]) -> None:
+    async def perform() -> None:
+        test_engine = create_engine(
+            "sqlite+pysqlite:///:memory:",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
+        Base.metadata.create_all(test_engine)
+        with Session(test_engine) as session:
+            _seed_test_data(session)
+            session.commit()
+
+        async def override_db_session() -> AsyncIterator[AsyncSession]:
+            with Session(test_engine, expire_on_commit=False) as session:
+                yield cast(AsyncSession, AsyncSessionAdapter(session))
+
+        app.dependency_overrides[get_db_session] = override_db_session
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                await callback(client)
+        finally:
+            app.dependency_overrides.pop(get_db_session, None)
+            test_engine.dispose()
+
+    asyncio.run(perform())
+
+
 def _choice_payload(
     *,
     question_type: str = "single_choice",
@@ -257,6 +287,26 @@ def _true_false_payload(answer: str = "true") -> dict[str, object]:
         "correct_answer": [answer],
         "analysis": "Kubernetes 用于容器编排。",
         "difficulty": "easy",
+    }
+
+
+def _manual_payload(
+    question_type: str,
+    *,
+    reference_answer: str | None = "教师阅卷参考答案",
+) -> dict[str, object]:
+    return {
+        "question_type": question_type,
+        "content": (
+            "Linux 默认超级用户名称是 ______。"
+            if question_type == "fill_blank"
+            else "请简述 Docker 容器和传统虚拟机的主要区别。"
+        ),
+        "options": [],
+        "correct_answer": None,
+        "reference_answer": reference_answer,
+        "analysis": "测试解析",
+        "difficulty": "medium",
     }
 
 
@@ -562,3 +612,253 @@ def test_no_question_delete_route_is_registered() -> None:
         route.path == "/api/v1/questions/{question_id}" and "DELETE" in (route.methods or set())
         for route in app.routes
     )
+
+
+@pytest.mark.parametrize(
+    ("question_type", "user_id"),
+    [
+        ("fill_blank", TEACHER_USER_ID),
+        ("fill_blank", ADMIN_USER_ID),
+        ("subjective", TEACHER_USER_ID),
+        ("subjective", ADMIN_USER_ID),
+    ],
+)
+def test_admin_and_teacher_can_create_manual_question(
+    question_type: str,
+    user_id: int,
+) -> None:
+    response = _request(
+        "POST",
+        "/api/v1/questions",
+        json=_manual_payload(question_type),
+        user_id=user_id,
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["question_type"] == question_type
+    assert body["correct_answer"] is None
+    assert body["reference_answer"] == "教师阅卷参考答案"
+    assert body["options"] == []
+
+
+@pytest.mark.parametrize("question_type", ["fill_blank", "subjective"])
+def test_manual_question_reference_answer_is_optional(question_type: str) -> None:
+    response = _request(
+        "POST",
+        "/api/v1/questions",
+        json=_manual_payload(question_type, reference_answer=None),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["reference_answer"] is None
+
+
+def test_student_cannot_create_manual_question() -> None:
+    response = _request(
+        "POST",
+        "/api/v1/questions",
+        json=_manual_payload("fill_blank"),
+        user_id=STUDENT_USER_ID,
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize("question_type", ["fill_blank", "subjective"])
+def test_manual_question_rejects_options_and_correct_answer(
+    question_type: str,
+) -> None:
+    with_options = _manual_payload(question_type)
+    with_options["options"] = [
+        {"option_key": "A", "option_content": "非法选项", "sort_order": 1}
+    ]
+    with_answer = _manual_payload(question_type)
+    with_answer["correct_answer"] = ["root"]
+
+    options_response = _request(
+        "POST",
+        "/api/v1/questions",
+        json=with_options,
+    )
+    answer_response = _request(
+        "POST",
+        "/api/v1/questions",
+        json=with_answer,
+    )
+
+    assert options_response.status_code == 400
+    assert "人工阅卷题不能包含选项" in options_response.json()["detail"]
+    assert answer_response.status_code == 400
+    assert "正确答案必须为空" in answer_response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _choice_payload(),
+        _true_false_payload(),
+    ],
+)
+def test_auto_graded_question_requires_answer_and_rejects_reference(
+    payload: dict[str, object],
+) -> None:
+    missing_answer = dict(payload)
+    missing_answer["correct_answer"] = None
+    with_reference = dict(payload)
+    with_reference["reference_answer"] = "不允许重复保存标准答案"
+
+    missing_response = _request(
+        "POST",
+        "/api/v1/questions",
+        json=missing_answer,
+    )
+    reference_response = _request(
+        "POST",
+        "/api/v1/questions",
+        json=with_reference,
+    )
+
+    assert missing_response.status_code == 400
+    assert "必须提供正确答案" in missing_response.json()["detail"]
+    assert reference_response.status_code == 400
+    assert "不能设置人工阅卷参考答案" in reference_response.json()["detail"]
+
+
+@pytest.mark.parametrize("question_type", ["fill_blank", "subjective"])
+def test_manual_question_detail_filter_and_reference_update(
+    question_type: str,
+) -> None:
+    async def scenario(client: AsyncClient) -> None:
+        headers = {
+            "Authorization": f"Bearer {create_access_token(TEACHER_USER_ID)}"
+        }
+        created_response = await client.post(
+            "/api/v1/questions",
+            headers=headers,
+            json=_manual_payload(question_type),
+        )
+        assert created_response.status_code == 201
+        question_id = created_response.json()["id"]
+
+        detail = await client.get(
+            f"/api/v1/questions/{question_id}",
+            headers=headers,
+        )
+        filtered = await client.get(
+            f"/api/v1/questions?question_type={question_type}",
+            headers=headers,
+        )
+        updated_payload = _manual_payload(
+            question_type,
+            reference_answer="更新后的参考答案",
+        )
+        updated = await client.put(
+            f"/api/v1/questions/{question_id}",
+            headers=headers,
+            json=updated_payload,
+        )
+
+        assert detail.status_code == 200
+        assert detail.json()["correct_answer"] is None
+        assert [item["id"] for item in filtered.json()["items"]] == [question_id]
+        assert updated.status_code == 200
+        assert updated.json()["reference_answer"] == "更新后的参考答案"
+
+    _run_scenario(scenario)
+
+
+def test_question_type_switches_clear_incompatible_fields() -> None:
+    async def scenario(client: AsyncClient) -> None:
+        headers = {"Authorization": f"Bearer {create_access_token(ADMIN_USER_ID)}"}
+
+        to_fill = await client.put(
+            "/api/v1/questions/100",
+            headers=headers,
+            json=_manual_payload("fill_blank", reference_answer="root"),
+        )
+        assert to_fill.status_code == 200
+        assert to_fill.json()["options"] == []
+        assert to_fill.json()["correct_answer"] is None
+        assert to_fill.json()["reference_answer"] == "root"
+
+        to_choice = await client.put(
+            "/api/v1/questions/100",
+            headers=headers,
+            json=_choice_payload(),
+        )
+        assert to_choice.status_code == 200
+        assert len(to_choice.json()["options"]) == 3
+        assert to_choice.json()["correct_answer"] == ["A"]
+        assert to_choice.json()["reference_answer"] is None
+
+        to_subjective = await client.put(
+            "/api/v1/questions/102",
+            headers=headers,
+            json=_manual_payload("subjective"),
+        )
+        assert to_subjective.status_code == 200
+        assert to_subjective.json()["options"] == []
+        assert to_subjective.json()["correct_answer"] is None
+
+        subjective = await client.post(
+            "/api/v1/questions",
+            headers=headers,
+            json=_manual_payload("subjective"),
+        )
+        to_true_false = await client.put(
+            f"/api/v1/questions/{subjective.json()['id']}",
+            headers=headers,
+            json=_true_false_payload(),
+        )
+        assert to_true_false.status_code == 200
+        assert to_true_false.json()["correct_answer"] == ["true"]
+        assert to_true_false.json()["reference_answer"] is None
+
+    _run_scenario(scenario)
+
+
+def test_failed_manual_to_choice_transition_is_rolled_back() -> None:
+    async def scenario(client: AsyncClient) -> None:
+        headers = {"Authorization": f"Bearer {create_access_token(ADMIN_USER_ID)}"}
+        created = await client.post(
+            "/api/v1/questions",
+            headers=headers,
+            json=_manual_payload("fill_blank", reference_answer="root"),
+        )
+        question_id = created.json()["id"]
+
+        invalid = _choice_payload(options=[])
+        invalid["content"] = "不应持久化"
+        failed = await client.put(
+            f"/api/v1/questions/{question_id}",
+            headers=headers,
+            json=invalid,
+        )
+        detail = await client.get(
+            f"/api/v1/questions/{question_id}",
+            headers=headers,
+        )
+
+        assert failed.status_code == 400
+        assert detail.json()["question_type"] == "fill_blank"
+        assert detail.json()["content"] == "Linux 默认超级用户名称是 ______。"
+        assert detail.json()["reference_answer"] == "root"
+
+    _run_scenario(scenario)
+
+
+def test_openapi_exposes_five_types_nullable_answers_and_reference_answer() -> None:
+    schema = app.openapi()
+    question_type_schema = schema["components"]["schemas"]["QuestionType"]
+    assert question_type_schema["enum"] == [
+        "single_choice",
+        "multiple_choice",
+        "true_false",
+        "fill_blank",
+        "subjective",
+    ]
+
+    write_schema = schema["components"]["schemas"]["QuestionCreate"]
+    assert "reference_answer" in write_schema["properties"]
+    assert "correct_answer" in write_schema["properties"]
+    assert {"type": "null"} in write_schema["properties"]["correct_answer"]["anyOf"]

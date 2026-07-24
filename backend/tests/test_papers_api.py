@@ -39,6 +39,7 @@ ADMIN_ACTIVE_PAPER_ID = 12
 TEACHER_ACTIVE_PAPER_ID = 13
 TEACHER_DISABLED_PAPER_ID = 14
 TEACHER_EMPTY_PAPER_ID = 15
+TEACHER_MIXED_PAPER_ID = 16
 
 
 class AsyncSessionAdapter:
@@ -97,9 +98,13 @@ def _question(
     status: RecordStatus = RecordStatus.ACTIVE,
     question_type: QuestionType = QuestionType.SINGLE_CHOICE,
 ) -> Question:
+    manual = question_type in {
+        QuestionType.FILL_BLANK,
+        QuestionType.SUBJECTIVE,
+    }
     options = (
         []
-        if question_type == QuestionType.TRUE_FALSE
+        if question_type == QuestionType.TRUE_FALSE or manual
         else [
             QuestionOption(
                 id=question_id * 10 + 1,
@@ -119,7 +124,14 @@ def _question(
         id=question_id,
         question_type=question_type,
         content=content,
-        correct_answer=["true"] if question_type == QuestionType.TRUE_FALSE else ["A"],
+        correct_answer=(
+            None
+            if manual
+            else ["true"]
+            if question_type == QuestionType.TRUE_FALSE
+            else ["A"]
+        ),
+        reference_answer="人工题参考答案" if manual else None,
         analysis="测试解析",
         difficulty=QuestionDifficulty.EASY,
         status=status,
@@ -202,9 +214,32 @@ def _seed_test_data(session: Session) -> None:
         content="Kubernetes 是容器编排系统。",
         question_type=QuestionType.TRUE_FALSE,
     )
+    teacher_fill_blank = _question(
+        question_id=103,
+        content="Linux 默认超级用户名称是 ______。",
+        question_type=QuestionType.FILL_BLANK,
+    )
+    teacher_subjective = _question(
+        question_id=104,
+        content="请简述容器和虚拟机的主要区别。",
+        question_type=QuestionType.SUBJECTIVE,
+    )
+    teacher_disabled_fill_blank = _question(
+        question_id=105,
+        content="已禁用填空题",
+        status=RecordStatus.DISABLED,
+        question_type=QuestionType.FILL_BLANK,
+    )
 
     teacher.created_questions.extend(
-        [teacher_question_1, teacher_question_2, teacher_disabled_question]
+        [
+            teacher_question_1,
+            teacher_question_2,
+            teacher_disabled_question,
+            teacher_fill_blank,
+            teacher_subjective,
+            teacher_disabled_fill_blank,
+        ]
     )
     other_teacher.created_questions.append(other_question)
     admin.created_questions.append(admin_question)
@@ -237,6 +272,18 @@ def _seed_test_data(session: Session) -> None:
                 name="Linux 空白试卷",
                 status=PaperStatus.DRAFT,
                 items=[],
+            ),
+            _paper(
+                paper_id=TEACHER_MIXED_PAPER_ID,
+                name="五题型混合试卷",
+                status=PaperStatus.DRAFT,
+                items=[
+                    (1600, teacher_question_1, "10.00"),
+                    (1601, teacher_question_2, "10.00"),
+                    (1602, admin_question, "10.00"),
+                    (1603, teacher_fill_blank, "20.00"),
+                    (1604, teacher_subjective, "50.00"),
+                ],
             ),
         ]
     )
@@ -356,7 +403,7 @@ def test_admin_list_is_paginated_and_has_efficient_question_count() -> None:
     response = _request("GET", "/api/v1/papers?page=2&page_size=2")
 
     assert response.status_code == 200
-    assert response.json()["total"] == 6
+    assert response.json()["total"] == 7
     assert response.json()["page"] == 2
     assert response.json()["page_size"] == 2
     assert len(response.json()["items"]) == 2
@@ -367,7 +414,7 @@ def test_teacher_list_only_contains_owned_papers() -> None:
     response = _request("GET", "/api/v1/papers", user_id=TEACHER_USER_ID)
 
     assert response.status_code == 200
-    assert response.json()["total"] == 4
+    assert response.json()["total"] == 5
     assert {item["creator"]["id"] for item in response.json()["items"]} == {
         TEACHER_USER_ID
     }
@@ -716,3 +763,57 @@ def test_no_paper_delete_route_is_registered() -> None:
         route.path == "/api/v1/papers/{paper_id}" and "DELETE" in (route.methods or set())
         for route in app.routes
     )
+
+
+def test_manual_questions_can_be_added_with_individual_scores() -> None:
+    response = _request(
+        "POST",
+        f"/api/v1/papers/{TEACHER_EMPTY_PAPER_ID}/questions",
+        json=_batch_payload((103, "5.00"), (104, "10.50")),
+        user_id=TEACHER_USER_ID,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["question_type"] for item in body["questions"]] == [
+        "fill_blank",
+        "subjective",
+    ]
+    assert [item["correct_answer"] for item in body["questions"]] == [None, None]
+    assert [item["reference_answer"] for item in body["questions"]] == [
+        "人工题参考答案",
+        "人工题参考答案",
+    ]
+    assert Decimal(body["total_score"]) == Decimal("15.50")
+
+
+def test_disabled_manual_question_cannot_be_added() -> None:
+    response = _request(
+        "POST",
+        f"/api/v1/papers/{TEACHER_EMPTY_PAPER_ID}/questions",
+        json=_batch_payload((105, "5.00")),
+        user_id=TEACHER_USER_ID,
+    )
+    assert response.status_code == 409
+
+
+def test_mixed_five_type_paper_can_be_activated() -> None:
+    response = _request(
+        "PATCH",
+        f"/api/v1/papers/{TEACHER_MIXED_PAPER_ID}/status",
+        json={"status": "active"},
+        user_id=TEACHER_USER_ID,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "active"
+    assert body["question_count"] == 5
+    assert Decimal(body["total_score"]) == Decimal("100.00")
+    assert {item["question_type"] for item in body["questions"]} == {
+        "single_choice",
+        "multiple_choice",
+        "true_false",
+        "fill_blank",
+        "subjective",
+    }

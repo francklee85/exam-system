@@ -91,7 +91,8 @@ class PaperQuestionResponse(BaseModel):
     question_type: QuestionType
     content: str
     options: list[PaperQuestionOptionResponse]
-    correct_answer: list[str]
+    correct_answer: list[str] | None
+    reference_answer: str | None
     analysis: str | None
     difficulty: QuestionDifficulty
     question_status: RecordStatus
@@ -111,6 +112,7 @@ class PaperQuestionResponse(BaseModel):
                 for option in question.options
             ],
             correct_answer=question.correct_answer,
+            reference_answer=question.reference_answer,
             analysis=question.analysis,
             difficulty=question.difficulty,
             question_status=question.status,
