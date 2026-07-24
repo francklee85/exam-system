@@ -28,6 +28,8 @@ from app.modules.questions.enums import QuestionDifficulty, QuestionType
 
 EXPECTED_TABLES = {
     "classes",
+    "exam_answers",
+    "exam_attempts",
     "exam_questions",
     "exam_targets",
     "exams",
@@ -80,6 +82,8 @@ def test_model_metadata_matches_current_scope() -> None:
         "exam_targets"
     )
     assert ("exam_id", "sort_order") in _unique_column_sets("exam_questions")
+    assert ("exam_id", "student_user_id") in _unique_column_sets("exam_attempts")
+    assert ("attempt_id", "exam_question_id") in _unique_column_sets("exam_answers")
 
 
 def test_orm_relationships_can_be_queried() -> None:

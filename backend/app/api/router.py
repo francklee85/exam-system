@@ -1,5 +1,9 @@
 from fastapi import APIRouter
 
+from app.api.routes.attempts import (
+    attempts_router,
+    my_exams_router,
+)
 from app.api.routes.auth import router as auth_router
 from app.api.routes.classes import router as classes_router
 from app.api.routes.exams import router as exams_router
@@ -24,3 +28,5 @@ api_router.include_router(users_router, prefix=api_v1_prefix)
 api_router.include_router(questions_router, prefix=api_v1_prefix)
 api_router.include_router(papers_router, prefix=api_v1_prefix)
 api_router.include_router(exams_router, prefix=api_v1_prefix)
+api_router.include_router(my_exams_router, prefix=api_v1_prefix)
+api_router.include_router(attempts_router, prefix=api_v1_prefix)

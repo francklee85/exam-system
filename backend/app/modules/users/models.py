@@ -11,6 +11,7 @@ from app.db.enums import RecordStatus, record_status_type
 from app.db.mixins import TimestampMixin
 
 if TYPE_CHECKING:
+    from app.modules.attempts.models import ExamAnswer, ExamAttempt
     from app.modules.exams.models import Exam
     from app.modules.papers.models import Paper
     from app.modules.questions.models import Question
@@ -51,3 +52,11 @@ class User(TimestampMixin, Base):
     created_questions: Mapped[list[Question]] = relationship(back_populates="creator")
     created_papers: Mapped[list[Paper]] = relationship(back_populates="creator")
     created_exams: Mapped[list[Exam]] = relationship(back_populates="creator")
+    exam_attempts: Mapped[list[ExamAttempt]] = relationship(
+        back_populates="student",
+        foreign_keys="ExamAttempt.student_user_id",
+    )
+    graded_exam_answers: Mapped[list[ExamAnswer]] = relationship(
+        back_populates="grader",
+        foreign_keys="ExamAnswer.grader_id",
+    )

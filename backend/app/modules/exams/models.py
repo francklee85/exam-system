@@ -30,6 +30,7 @@ from app.modules.exams.enums import (
 from app.modules.questions.enums import QuestionType, question_type_column
 
 if TYPE_CHECKING:
+    from app.modules.attempts.models import ExamAnswer, ExamAttempt
     from app.modules.papers.models import Paper
     from app.modules.users.models import User
 
@@ -86,6 +87,7 @@ class Exam(TimestampMixin, Base):
         passive_deletes=True,
         order_by="ExamQuestion.sort_order",
     )
+    attempts: Mapped[list[ExamAttempt]] = relationship(back_populates="exam")
 
 
 class ExamTarget(CreatedAtMixin, Base):
@@ -158,3 +160,4 @@ class ExamQuestion(CreatedAtMixin, Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
 
     exam: Mapped[Exam] = relationship(back_populates="snapshot_questions")
+    answers: Mapped[list[ExamAnswer]] = relationship(back_populates="exam_question")
