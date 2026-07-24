@@ -50,6 +50,14 @@ const results = {
   studentMenuHidden: false,
   studentForbidden: false,
   timezoneContractCorrect: false,
+  studentMyExamsVisible: false,
+  studentAttemptStarted: false,
+  safeStudentQuestionContract: false,
+  fiveStudentAnswersSaved: false,
+  studentAnswersRestored: false,
+  repeatedStartRestoresAttempt: false,
+  latestSubjectiveAnswerWins: false,
+  deadlineLocksStudentUi: false,
 }
 
 const browser = await puppeteer.launch({
@@ -62,12 +70,16 @@ let page
 let setup
 let paper
 let exam
+let liveExam
 let currentStage = 'start'
 
 try {
   page = await browser.newPage()
   await page.setViewport({ width: 1600, height: 1100 })
   page.setDefaultTimeout(30_000)
+  page.on('dialog', async (dialog) => {
+    await dialog.accept()
+  })
 
   currentStage = 'admin-setup'
   await login(page, adminUsername, adminPassword)
@@ -273,6 +285,13 @@ try {
   await waitForText(page, examName)
   results.adminSeesTeacherExam = true
 
+  currentStage = 'create-live-student-exam'
+  liveExam = await createLiveExamByApi(page, {
+    name: `学生在线五题型考试 [${suffix}]`,
+    paperId: paper.id,
+    classId: setup.classRecord.id,
+  })
+
   currentStage = 'student-check'
   await login(page, student.username, student.password)
   results.studentMenuHidden = await page.evaluate(
@@ -285,8 +304,139 @@ try {
   await waitForText(page, '无权限访问')
   results.studentForbidden = (await windowPath(page)) === '/403'
 
+  currentStage = 'student-my-exams'
+  await page.goto(`${frontendUrl}/my-exams`, { waitUntil: 'domcontentloaded' })
+  await waitForText(page, '我的考试')
+  await waitForText(page, liveExam.name)
+  results.studentMyExamsVisible = true
+
+  currentStage = 'student-start'
+  const startResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/v1/my-exams/${liveExam.id}/start`) &&
+      response.request().method() === 'POST' &&
+      response.status() === 200,
+  )
+  await page.click(`[data-e2e="start-exam-${liveExam.id}"]`)
+  await clickButtonByText(page, '确认开始')
+  const attempt = await (await startResponse).json()
+  await page.waitForFunction(
+    (attemptId) => window.location.pathname === `/attempts/${attemptId}`,
+    {},
+    attempt.attempt_id,
+  )
+  await page.waitForSelector('[data-e2e="online-exam"]')
+  results.studentAttemptStarted =
+    attempt.status === 'in_progress' && attempt.questions.length === 5
+  results.safeStudentQuestionContract = attempt.questions.every(
+    (question) =>
+      !Object.hasOwn(question, 'correct_answer') &&
+      !Object.hasOwn(question, 'reference_answer') &&
+      !Object.hasOwn(question, 'analysis') &&
+      !Object.hasOwn(question, 'original_question_id'),
+  )
+
+  currentStage = 'student-five-answers'
+  await selectStudentOption(page, attempt.questions[0].exam_question_id, 'A')
+  await page.click('[data-e2e="question-nav-2"]')
+  await selectStudentOption(page, attempt.questions[1].exam_question_id, 'A')
+  await selectStudentOption(page, attempt.questions[1].exam_question_id, 'C')
+  await page.click('[data-e2e="question-nav-3"]')
+  await selectStudentOption(page, attempt.questions[2].exam_question_id, 'true')
+  await page.click('[data-e2e="question-nav-4"]')
+  await typeStudentAnswer(
+    page,
+    attempt.attempt_id,
+    attempt.questions[3].exam_question_id,
+    `[data-e2e="answer-${attempt.questions[3].exam_question_id}"]`,
+    'root',
+  )
+  await page.click('[data-e2e="question-nav-5"]')
+  await typeStudentAnswer(
+    page,
+    attempt.attempt_id,
+    attempt.questions[4].exam_question_id,
+    `[data-e2e="answer-${attempt.questions[4].exam_question_id}"]`,
+    '第一行回答\n第二行回答',
+  )
+  await waitForSaveStatus(page, '已保存')
+  let restoredAttempt = await browserRequest(
+    page,
+    `/api/v1/attempts/${attempt.attempt_id}`,
+  )
+  results.fiveStudentAnswersSaved =
+    restoredAttempt.questions.map((question) => JSON.stringify(question.saved_answer)).join('|') ===
+    '["A"]|["A","C"]|["true"]|["root"]|["第一行回答\\n第二行回答"]'
+
+  currentStage = 'student-refresh-restore'
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('[data-e2e="online-exam"]')
+  await page.click('[data-e2e="question-nav-4"]')
+  const restoredFillBlank = await page.$eval(
+    `[data-e2e="answer-${attempt.questions[3].exam_question_id}"]`,
+    (input) => input.value,
+  )
+  await page.click('[data-e2e="question-nav-5"]')
+  const restoredSubjective = await page.$eval(
+    `[data-e2e="answer-${attempt.questions[4].exam_question_id}"]`,
+    (input) => input.value,
+  )
+  results.studentAnswersRestored =
+    restoredFillBlank === 'root' &&
+    restoredSubjective === '第一行回答\n第二行回答'
+
+  currentStage = 'student-repeat-start'
+  const repeatedAttempt = await browserRequest(
+    page,
+    `/api/v1/my-exams/${liveExam.id}/start`,
+    { method: 'POST' },
+  )
+  results.repeatedStartRestoresAttempt =
+    repeatedAttempt.attempt_id === attempt.attempt_id
+
+  currentStage = 'student-latest-answer'
+  const subjectiveSelector =
+    `[data-e2e="answer-${attempt.questions[4].exam_question_id}"]`
+  await replaceText(page, subjectiveSelector, '快速修改旧版本')
+  await typeStudentAnswer(
+    page,
+    attempt.attempt_id,
+    attempt.questions[4].exam_question_id,
+    subjectiveSelector,
+    '最终保留的新版本',
+  )
+  await waitForSaveStatus(page, '已保存')
+  restoredAttempt = await browserRequest(
+    page,
+    `/api/v1/attempts/${attempt.attempt_id}`,
+  )
+  results.latestSubjectiveAnswerWins =
+    restoredAttempt.questions[4].saved_answer?.[0] === '最终保留的新版本'
+
+  currentStage = 'student-close-and-continue'
+  await page.goto(`${frontendUrl}/my-exams`, { waitUntil: 'domcontentloaded' })
+  await waitForText(page, liveExam.name)
+  await page.click(`[data-e2e="continue-attempt-${attempt.attempt_id}"]`)
+  await page.waitForFunction(
+    (attemptId) => window.location.pathname === `/attempts/${attemptId}`,
+    {},
+    attempt.attempt_id,
+  )
+  await page.waitForSelector('[data-e2e="online-exam"]')
+
+  currentStage = 'student-deadline-lock'
+  await page.waitForFunction(
+    () =>
+      document.body.textContent?.includes('考试时间已结束，不能继续作答。') &&
+      [...document.querySelectorAll('input, textarea')].every(
+        (control) => control.disabled || control.getAttribute('aria-hidden') === 'true',
+      ),
+    { timeout: 70_000 },
+  )
+  results.deadlineLocksStudentUi = true
+
   if (screenshotPrefix) {
-    await page.screenshot({ path: `${screenshotPrefix}-student-403.png`, fullPage: true })
+    await page.screenshot({ path: `${screenshotPrefix}-student-attempt.png`, fullPage: true })
   }
 
   const failed = Object.entries(results).filter(([, value]) => value !== true)
@@ -490,6 +640,27 @@ async function createDraftByApi(page, { name, paperId, target }) {
   })
 }
 
+async function createLiveExamByApi(page, { name, paperId, classId }) {
+  const now = Date.now()
+  const formatUtcNaive = (date) => new Date(date).toISOString().slice(0, 19)
+  const draft = await browserRequest(page, '/api/v1/exams', {
+    method: 'POST',
+    body: {
+      name,
+      paper_id: paperId,
+      description: '学生在线考试浏览器联调',
+      start_time: formatUtcNaive(now - 60_000),
+      end_time: formatUtcNaive(now + 45_000),
+      duration_minutes: 90,
+      pass_score: '60.00',
+      target: { target_type: 'class', target_id: classId },
+    },
+  })
+  return browserRequest(page, `/api/v1/exams/${draft.id}/publish`, {
+    method: 'POST',
+  })
+}
+
 async function mutateManualQuestion(page, questionId) {
   const detail = await browserRequest(page, `/api/v1/questions/${questionId}`)
   return browserRequest(page, `/api/v1/questions/${questionId}`, {
@@ -603,6 +774,69 @@ async function clearAndType(page, selector, value) {
   await page.click(selector, { clickCount: 3 })
   await page.keyboard.press('Backspace')
   await page.type(selector, value)
+}
+
+async function selectStudentOption(page, questionId, value) {
+  await page.waitForSelector(`[data-e2e="answer-${questionId}"]`, {
+    visible: true,
+  })
+  const response = page.waitForResponse(
+    (candidate) =>
+      candidate.url().endsWith(`/answers/${questionId}`) &&
+      candidate.request().method() === 'PUT' &&
+      candidate.status() === 200,
+  )
+  await page.evaluate(
+    ({ id, selectedValue }) => {
+      const group = document.querySelector(`[data-e2e="answer-${id}"]`)
+      const control = [...(group?.querySelectorAll('input') ?? [])].find(
+        (candidate) => candidate.value === selectedValue,
+      )
+      control?.closest('label')?.click()
+    },
+    { id: questionId, selectedValue: value },
+  )
+  await response
+}
+
+async function typeStudentAnswer(
+  page,
+  attemptId,
+  questionId,
+  selector,
+  value,
+) {
+  const response = page.waitForResponse(
+    (candidate) =>
+      candidate.url().endsWith(
+        `/api/v1/attempts/${attemptId}/answers/${questionId}`,
+      ) &&
+      candidate.request().method() === 'PUT' &&
+      candidate.status() === 200,
+  )
+  await replaceText(page, selector, value)
+  await response
+}
+
+async function replaceText(page, selector, value) {
+  await page.waitForSelector(selector, { visible: true })
+  await page.click(selector)
+  await page.keyboard.down('Control')
+  await page.keyboard.press('KeyA')
+  await page.keyboard.up('Control')
+  await page.keyboard.press('Backspace')
+  await page.type(selector, value)
+}
+
+async function waitForSaveStatus(page, status) {
+  await page.waitForFunction(
+    (expected) =>
+      document.querySelector('[data-e2e="save-status"]')?.textContent
+        ?.replace(/\s/gu, '')
+        .includes(expected),
+    {},
+    status,
+  )
 }
 
 async function clickButtonByText(page, text) {

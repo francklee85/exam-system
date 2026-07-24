@@ -12,7 +12,10 @@ import { ExamsPage } from '../pages/ExamsPage'
 import { ForbiddenPage } from '../pages/ForbiddenPage'
 import { LoginPage } from '../pages/LoginPage'
 import { MajorsPage } from '../pages/MajorsPage'
+import { MyExamDetailPage } from '../pages/MyExamDetailPage'
+import { MyExamsPage } from '../pages/MyExamsPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
+import { OnlineExamPage } from '../pages/OnlineExamPage'
 import { PaperDetailPage } from '../pages/PaperDetailPage'
 import { PapersPage } from '../pages/PapersPage'
 import { QuestionsPage } from '../pages/QuestionsPage'
@@ -34,6 +37,7 @@ const placeholderRoutes = navigationItems
         'questions',
         'papers',
         'exams',
+        'my-exams',
       ].includes(item.key),
   )
   .map((item) => ({
@@ -145,6 +149,30 @@ export const router = createBrowserRouter([
             element: (
               <RoleRoute allowedRoles={['admin', 'teacher']}>
                 <ExamDetailPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/my-exams',
+            element: (
+              <RoleRoute allowedRoles={['student']}>
+                <MyExamsPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/my-exams/:examId',
+            element: (
+              <RoleRoute allowedRoles={['student']}>
+                <MyExamDetailPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/attempts/:attemptId',
+            element: (
+              <RoleRoute allowedRoles={['student']}>
+                <OnlineExamPage />
               </RoleRoute>
             ),
           },

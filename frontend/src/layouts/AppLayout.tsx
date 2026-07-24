@@ -48,11 +48,13 @@ export function AppLayout() {
 
   const availableNavigation = useMemo(() => getNavigationItems(roles), [roles])
   const selectedMenuKey =
-    availableNavigation.find(
-      (item) =>
-        location.pathname === item.path ||
-        location.pathname.startsWith(`${item.path}/`),
-    )?.key ?? 'dashboard'
+    (location.pathname.startsWith('/attempts/')
+      ? availableNavigation.find((item) => item.key === 'my-exams')
+      : availableNavigation.find(
+          (item) =>
+            location.pathname === item.path ||
+            location.pathname.startsWith(`${item.path}/`),
+        ))?.key ?? 'dashboard'
 
   const handleLogout = () => {
     logout()

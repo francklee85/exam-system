@@ -87,7 +87,7 @@ export const navigationItems: readonly NavigationItem[] = [
     path: '/my-exams',
     label: '我的考试',
     allowedRoles: ['student'],
-    description: '我的考试将在后续轮次实现',
+    description: '查看可参加考试并继续在线作答',
   },
   {
     key: 'my-results',
