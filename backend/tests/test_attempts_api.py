@@ -894,3 +894,292 @@ def test_student_openapi_schemas_do_not_contain_sensitive_answer_fields() -> Non
         assert forbidden not in properties
     attempt_path = schema["paths"]["/api/v1/attempts/{attempt_id}"]["get"]
     assert attempt_path["responses"]["200"]["content"]["application/json"]["schema"]
+
+
+def test_mixed_attempt_submit_auto_grades_objective_and_queues_manual() -> None:
+    async def scenario(client: AsyncClient, engine: Engine) -> None:
+        started = await client.post(
+            f"/api/v1/my-exams/{ALL_EXAM_ID}/start",
+            headers=_headers(STUDENT_ID),
+        )
+        attempt_id = started.json()["attempt_id"]
+        answers = {1: ["A"], 2: ["C", "A"], 3: ["false"], 4: ["root"], 5: None}
+        for offset, answer in answers.items():
+            saved = await client.put(
+                f"/api/v1/attempts/{attempt_id}/answers/{ALL_EXAM_ID * 10 + offset}",
+                json={"answer": answer},
+                headers=_headers(STUDENT_ID),
+            )
+            assert saved.status_code == 200
+        submitted = await client.post(
+            f"/api/v1/attempts/{attempt_id}/submit",
+            headers=_headers(STUDENT_ID),
+        )
+        assert submitted.status_code == 200
+        body = submitted.json()
+        assert body["status"] == "submitted"
+        assert body["grading_status"] == "pending_manual_grading"
+        assert Decimal(body["objective_score"]) == Decimal("3.00")
+        assert body["manual_score"] is None
+        assert body["score"] is None
+        assert body["is_passed"] is None
+        assert body["submit_reason"] == "manual"
+
+        repeated = await client.post(
+            f"/api/v1/attempts/{attempt_id}/submit",
+            headers=_headers(STUDENT_ID),
+        )
+        assert repeated.json() == body
+        rejected = await client.put(
+            f"/api/v1/attempts/{attempt_id}/answers/{ALL_EXAM_ID * 10 + 1}",
+            json={"answer": ["B"]},
+            headers=_headers(STUDENT_ID),
+        )
+        assert rejected.status_code == 409
+
+        with Session(engine) as session:
+            answer_rows = list(
+                session.scalars(
+                    select(ExamAnswer).order_by(ExamAnswer.exam_question_id)
+                )
+            )
+            assert len(answer_rows) == 5
+            assert [row.score_awarded for row in answer_rows[:3]] == [
+                Decimal("1.00"),
+                Decimal("2.00"),
+                Decimal("0.00"),
+            ]
+            assert all(row.is_correct is None for row in answer_rows[3:])
+            assert all(row.score_awarded is None for row in answer_rows[3:])
+            assert all(row.grading_status.value == "pending" for row in answer_rows[3:])
+
+    _run_scenario(scenario)
+
+
+def test_pure_objective_attempt_is_immediately_graded() -> None:
+    async def scenario(client: AsyncClient, engine: Engine) -> None:
+        with Session(engine) as session:
+            exam = session.get(Exam, ALL_EXAM_ID)
+            for snapshot in list(exam.snapshot_questions):
+                if snapshot.question_type in {
+                    QuestionType.FILL_BLANK,
+                    QuestionType.SUBJECTIVE,
+                }:
+                    session.delete(snapshot)
+            exam.total_score = Decimal("4.00")
+            exam.pass_score = Decimal("4.00")
+            session.commit()
+        started = await client.post(
+            f"/api/v1/my-exams/{ALL_EXAM_ID}/start",
+            headers=_headers(STUDENT_ID),
+        )
+        attempt_id = started.json()["attempt_id"]
+        for offset, answer in {1: ["A"], 2: ["A", "C"], 3: ["true"]}.items():
+            await client.put(
+                f"/api/v1/attempts/{attempt_id}/answers/{ALL_EXAM_ID * 10 + offset}",
+                json={"answer": answer},
+                headers=_headers(STUDENT_ID),
+            )
+        response = await client.post(
+            f"/api/v1/attempts/{attempt_id}/submit",
+            headers=_headers(STUDENT_ID),
+        )
+        body = response.json()
+        assert body["grading_status"] == "graded"
+        assert Decimal(body["objective_score"]) == Decimal("4.00")
+        assert Decimal(body["manual_score"]) == Decimal("0.00")
+        assert Decimal(body["score"]) == Decimal("4.00")
+        assert body["is_passed"] is True
+
+    _run_scenario(scenario)
+
+
+def test_timeout_is_lazily_finalized_once() -> None:
+    async def scenario(client: AsyncClient, engine: Engine) -> None:
+        started = await client.post(
+            f"/api/v1/my-exams/{ALL_EXAM_ID}/start",
+            headers=_headers(STUDENT_ID),
+        )
+        attempt_id = started.json()["attempt_id"]
+        with Session(engine) as session:
+            attempt = session.get(ExamAttempt, attempt_id)
+            attempt.deadline_at = utc_now() - timedelta(seconds=1)
+            session.commit()
+        restored = await client.get(
+            f"/api/v1/attempts/{attempt_id}",
+            headers=_headers(STUDENT_ID),
+        )
+        assert restored.status_code == 200
+        assert restored.json()["status"] == "submitted"
+        assert restored.json()["submit_reason"] == "timeout"
+        repeated = await client.post(
+            f"/api/v1/attempts/{attempt_id}/submit",
+            headers=_headers(STUDENT_ID),
+        )
+        assert repeated.json()["submit_reason"] == "timeout"
+        with Session(engine) as session:
+            assert session.scalar(select(func.count(ExamAnswer.id))) == 5
+
+    _run_scenario(scenario)
+
+
+def test_teacher_manual_grading_completes_and_recalculates_result() -> None:
+    async def scenario(client: AsyncClient, _engine: Engine) -> None:
+        started = await client.post(
+            f"/api/v1/my-exams/{ALL_EXAM_ID}/start",
+            headers=_headers(STUDENT_ID),
+        )
+        attempt_id = started.json()["attempt_id"]
+        for offset, answer in {
+            1: ["A"],
+            2: ["A", "C"],
+            3: ["true"],
+            4: ["root"],
+            5: ["主观回答"],
+        }.items():
+            await client.put(
+                f"/api/v1/attempts/{attempt_id}/answers/{ALL_EXAM_ID * 10 + offset}",
+                json={"answer": answer},
+                headers=_headers(STUDENT_ID),
+            )
+        await client.post(
+            f"/api/v1/attempts/{attempt_id}/submit",
+            headers=_headers(STUDENT_ID),
+        )
+        tasks = await client.get(
+            "/api/v1/grading/tasks?grading_status=pending_manual_grading",
+            headers=_headers(TEACHER_ID),
+        )
+        assert tasks.status_code == 200
+        assert tasks.json()["items"][0]["attempt_id"] == attempt_id
+
+        first = await client.put(
+            f"/api/v1/grading/attempts/{attempt_id}/answers/{ALL_EXAM_ID * 10 + 4}",
+            json={"score_awarded": "3.50", "grading_comment": "基本正确"},
+            headers=_headers(TEACHER_ID),
+        )
+        assert first.status_code == 200
+        assert first.json()["grading_status"] == "pending_manual_grading"
+        second = await client.put(
+            f"/api/v1/grading/attempts/{attempt_id}/answers/{ALL_EXAM_ID * 10 + 5}",
+            json={"score_awarded": "6.00", "grading_comment": "说明完整"},
+            headers=_headers(TEACHER_ID),
+        )
+        final = second.json()
+        assert final["grading_status"] == "graded"
+        assert Decimal(final["objective_score"]) == Decimal("4.00")
+        assert Decimal(final["manual_score"]) == Decimal("9.50")
+        assert Decimal(final["score"]) == Decimal("13.50")
+        assert final["is_passed"] is True
+
+        revised = await client.put(
+            f"/api/v1/grading/attempts/{attempt_id}/answers/{ALL_EXAM_ID * 10 + 5}",
+            json={"score_awarded": "0.00", "grading_comment": "复核修正"},
+            headers=_headers(TEACHER_ID),
+        )
+        assert Decimal(revised.json()["score"]) == Decimal("7.50")
+        assert revised.json()["is_passed"] is False
+
+        student_result = await client.get(
+            f"/api/v1/my-results/{attempt_id}",
+            headers=_headers(STUDENT_ID),
+        )
+        assert student_result.status_code == 200
+        assert Decimal(student_result.json()["score"]) == Decimal("7.50")
+        assert "correct_answer" not in student_result.text
+        assert "reference_answer" not in student_result.text
+
+    _run_scenario(scenario)
+
+
+@pytest.mark.parametrize(("score", "expected"), [("-1", 422), ("4.01", 400)])
+def test_manual_grade_must_be_inside_question_score(
+    score: str,
+    expected: int,
+) -> None:
+    async def scenario(client: AsyncClient, _engine: Engine) -> None:
+        started = await client.post(
+            f"/api/v1/my-exams/{ALL_EXAM_ID}/start",
+            headers=_headers(STUDENT_ID),
+        )
+        attempt_id = started.json()["attempt_id"]
+        await client.post(
+            f"/api/v1/attempts/{attempt_id}/submit",
+            headers=_headers(STUDENT_ID),
+        )
+        response = await client.put(
+            f"/api/v1/grading/attempts/{attempt_id}/answers/{ALL_EXAM_ID * 10 + 4}",
+            json={"score_awarded": score, "grading_comment": None},
+            headers=_headers(TEACHER_ID),
+        )
+        assert response.status_code == expected
+
+    _run_scenario(scenario)
+
+
+def test_grading_and_result_permissions_and_exam_results() -> None:
+    async def scenario(client: AsyncClient, _engine: Engine) -> None:
+        started = await client.post(
+            f"/api/v1/my-exams/{ALL_EXAM_ID}/start",
+            headers=_headers(STUDENT_ID),
+        )
+        attempt_id = started.json()["attempt_id"]
+        await client.post(
+            f"/api/v1/attempts/{attempt_id}/submit",
+            headers=_headers(STUDENT_ID),
+        )
+        assert (
+            await client.get("/api/v1/grading/tasks", headers=_headers(STUDENT_ID))
+        ).status_code == 403
+        assert (
+            await client.get("/api/v1/my-results", headers=_headers(TEACHER_ID))
+        ).status_code == 403
+        teacher_results = await client.get(
+            f"/api/v1/exams/{ALL_EXAM_ID}/results",
+            headers=_headers(TEACHER_ID),
+        )
+        admin_results = await client.get(
+            f"/api/v1/exams/{ALL_EXAM_ID}/results",
+            headers=_headers(ADMIN_ID),
+        )
+        assert teacher_results.status_code == admin_results.status_code == 200
+        assert teacher_results.json()["summary"]["pending_manual_count"] == 1
+        assert teacher_results.json()["items"][0]["attempt_id"] == attempt_id
+
+    _run_scenario(scenario)
+
+
+def test_teacher_cannot_grade_another_owners_exam_but_admin_can() -> None:
+    async def scenario(client: AsyncClient, engine: Engine) -> None:
+        started = await client.post(
+            f"/api/v1/my-exams/{ALL_EXAM_ID}/start",
+            headers=_headers(STUDENT_ID),
+        )
+        attempt_id = started.json()["attempt_id"]
+        await client.post(
+            f"/api/v1/attempts/{attempt_id}/submit",
+            headers=_headers(STUDENT_ID),
+        )
+        with Session(engine) as session:
+            exam = session.get(Exam, ALL_EXAM_ID)
+            exam.created_by = ADMIN_ID
+            session.commit()
+        path = (
+            f"/api/v1/grading/attempts/{attempt_id}/answers/"
+            f"{ALL_EXAM_ID * 10 + 4}"
+        )
+        teacher = await client.put(
+            path,
+            json={"score_awarded": "2.00"},
+            headers=_headers(TEACHER_ID),
+        )
+        admin = await client.put(
+            path,
+            json={"score_awarded": "2.00"},
+            headers=_headers(ADMIN_ID),
+        )
+        assert teacher.status_code == 404
+        assert admin.status_code == 200
+        assert admin.json()["answers"][0]["grader_id"] == ADMIN_ID
+
+    _run_scenario(scenario)

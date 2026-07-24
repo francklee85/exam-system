@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getAttempt, saveAnswer } from '../api/studentExams'
+import { getAttempt, saveAnswer, submitAttempt } from '../api/studentExams'
 import {
   inProgressAttempt,
   studentQuestionFixtures,
@@ -18,10 +18,12 @@ vi.mock('../api/studentExams', () => ({
   startExam: vi.fn(),
   getAttempt: vi.fn(),
   saveAnswer: vi.fn(),
+  submitAttempt: vi.fn(),
 }))
 
 const mockedGetAttempt = vi.mocked(getAttempt)
 const mockedSaveAnswer = vi.mocked(saveAnswer)
+const mockedSubmitAttempt = vi.mocked(submitAttempt)
 
 function savedResponse(questionId: number, answer: string[] | null): SavedAnswer {
   return {
@@ -61,6 +63,17 @@ describe('online exam safe rendering and recovery', () => {
     mockedSaveAnswer.mockImplementation((_attemptId, questionId, payload) =>
       Promise.resolve(savedResponse(questionId, payload.answer)),
     )
+    mockedSubmitAttempt.mockResolvedValue({
+      attempt_id: 2001,
+      status: 'submitted',
+      grading_status: 'pending_manual_grading',
+      submitted_at: '2026-07-24T01:30:00',
+      submit_reason: 'manual',
+      objective_score: '4.00',
+      manual_score: null,
+      score: null,
+      is_passed: null,
+    })
   })
 
   it('loads the attempt directly, restores answers and never starts again', async () => {
@@ -232,6 +245,43 @@ describe('save ordering, failure and deadline locking', () => {
         },
       ],
     })
+  })
+
+  it('flushes the latest debounced text before formal submission', async () => {
+    mockedSaveAnswer.mockImplementation((_attemptId, questionId, payload) =>
+      Promise.resolve(savedResponse(questionId, payload.answer)),
+    )
+    mockedSubmitAttempt.mockResolvedValue({
+      attempt_id: 2001,
+      status: 'submitted',
+      grading_status: 'pending_manual_grading',
+      submitted_at: '2026-07-24T01:30:00',
+      submit_reason: 'manual',
+      objective_score: '0.00',
+      manual_score: null,
+      score: null,
+      is_passed: null,
+    })
+    const user = userEvent.setup()
+    renderAttempt()
+    const textarea = await screen.findByLabelText('主观问答题答案')
+    await user.type(textarea, '最后一个字')
+    await user.click(screen.getByRole('button', { name: /正式交卷/u }))
+    await user.click(await screen.findByRole('button', { name: '确认交卷' }))
+    await waitFor(() =>
+      expect(mockedSaveAnswer).toHaveBeenCalledWith(
+        2001,
+        3005,
+        { answer: ['最后一个字'] },
+        expect.any(AbortSignal),
+      ),
+    )
+    await waitFor(() => expect(mockedSubmitAttempt).toHaveBeenCalledWith(2001))
+    expect(mockedSaveAnswer.mock.invocationCallOrder[0]).toBeLessThan(
+      mockedSubmitAttempt.mock.invocationCallOrder[0]!,
+    )
+    expect(await screen.findByText('已交卷，等待教师人工阅卷')).toBeInTheDocument()
+    expect(textarea).toBeDisabled()
   })
 
   it('queues a newer text version behind an in-flight request so the latest wins', async () => {

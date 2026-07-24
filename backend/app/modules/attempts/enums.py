@@ -20,6 +20,11 @@ class AnswerGradingStatus(StrEnum):
     GRADED = "graded"
 
 
+class SubmitReason(StrEnum):
+    MANUAL = "manual"
+    TIMEOUT = "timeout"
+
+
 def _enum_values[EnumT: StrEnum](enum_class: type[EnumT]) -> list[str]:
     return [member.value for member in enum_class]
 
@@ -50,6 +55,17 @@ def answer_grading_status_type() -> Enum[AnswerGradingStatus]:
     return Enum(
         AnswerGradingStatus,
         name="answer_grading_status",
+        native_enum=False,
+        length=20,
+        validate_strings=True,
+        values_callable=_enum_values,
+    )
+
+
+def submit_reason_type() -> Enum[SubmitReason]:
+    return Enum(
+        SubmitReason,
+        name="attempt_submit_reason",
         native_enum=False,
         length=20,
         validate_strings=True,

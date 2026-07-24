@@ -11,6 +11,7 @@ import {
   listMyExams,
   saveAnswer,
   startExam,
+  submitAttempt,
 } from './studentExams'
 import { apiClient } from './http'
 
@@ -64,5 +65,22 @@ describe('student exam API module', () => {
     expect(JSON.parse(mockApi.history.put[0]?.data ?? '{}')).toEqual({
       answer: ['A', 'C'],
     })
+  })
+
+  it('submits through the explicit business action endpoint', async () => {
+    const result = {
+      attempt_id: 2001,
+      status: 'submitted',
+      grading_status: 'pending_manual_grading',
+      submitted_at: '2026-07-24T01:30:00',
+      submit_reason: 'manual',
+      objective_score: '4.00',
+      manual_score: null,
+      score: null,
+      is_passed: null,
+    }
+    mockApi.onPost('/api/v1/attempts/2001/submit').reply(200, result)
+    await expect(submitAttempt(2001)).resolves.toEqual(result)
+    expect(mockApi.history.post[0]?.url).toBe('/api/v1/attempts/2001/submit')
   })
 })

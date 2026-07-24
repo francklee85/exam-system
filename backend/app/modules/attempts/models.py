@@ -23,9 +23,11 @@ from app.modules.attempts.enums import (
     AnswerGradingStatus,
     AttemptGradingStatus,
     ExamAttemptStatus,
+    SubmitReason,
     answer_grading_status_type,
     attempt_grading_status_type,
     exam_attempt_status_type,
+    submit_reason_type,
 )
 
 if TYPE_CHECKING:
@@ -44,6 +46,7 @@ class ExamAttempt(TimestampMixin, Base):
         Index("ix_exam_attempts_exam_id", "exam_id"),
         Index("ix_exam_attempts_student_user_id", "student_user_id"),
         Index("ix_exam_attempts_status", "status"),
+        Index("ix_exam_attempts_grading_status", "grading_status"),
         Index("ix_exam_attempts_deadline_at", "deadline_at"),
     )
 
@@ -71,6 +74,18 @@ class ExamAttempt(TimestampMixin, Base):
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     deadline_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    submit_reason: Mapped[SubmitReason | None] = mapped_column(
+        submit_reason_type(),
+        nullable=True,
+    )
+    objective_score: Mapped[Decimal | None] = mapped_column(
+        Numeric(6, 2),
+        nullable=True,
+    )
+    manual_score: Mapped[Decimal | None] = mapped_column(
+        Numeric(6, 2),
+        nullable=True,
+    )
     score: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
     is_passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 

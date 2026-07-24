@@ -211,6 +211,7 @@ def test_mysql_student_attempt_and_five_answer_restore_flow() -> None:
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 student_headers = await login(client, STUDENT_USERNAME)
                 other_headers = await login(client, OTHER_STUDENT_USERNAME)
+                teacher_headers = await login(client, TEACHER_USERNAME)
 
                 listing = await client.get("/api/v1/my-exams", headers=student_headers)
                 assert listing.status_code == 200
@@ -282,6 +283,60 @@ def test_mysql_student_attempt_and_five_answer_restore_flow() -> None:
                 ]
                 assert "reference_answer" not in restored.text
 
+                submitted = await client.post(
+                    f"/api/v1/attempts/{attempt_id}/submit",
+                    headers=student_headers,
+                )
+                assert submitted.status_code == 200
+                assert submitted.json()["grading_status"] == "pending_manual_grading"
+                assert Decimal(submitted.json()["objective_score"]) == Decimal("4.00")
+                assert submitted.json()["score"] is None
+
+                grading_detail = await client.get(
+                    f"/api/v1/grading/attempts/{attempt_id}",
+                    headers=teacher_headers,
+                )
+                assert grading_detail.status_code == 200
+                assert len(grading_detail.json()["answers"]) == 2
+                assert "教师主观题参考答案" in grading_detail.text
+                fill_graded = await client.put(
+                    f"/api/v1/grading/attempts/{attempt_id}/answers/{question_ids[3]}",
+                    headers=teacher_headers,
+                    json={
+                        "score_awarded": "3.50",
+                        "grading_comment": "填空评分",
+                    },
+                )
+                assert fill_graded.json()["grading_status"] == (
+                    "pending_manual_grading"
+                )
+                subjective_graded = await client.put(
+                    f"/api/v1/grading/attempts/{attempt_id}/answers/{question_ids[4]}",
+                    headers=teacher_headers,
+                    json={
+                        "score_awarded": "6.00",
+                        "grading_comment": "主观评分",
+                    },
+                )
+                assert subjective_graded.json()["grading_status"] == "graded"
+                assert Decimal(subjective_graded.json()["score"]) == Decimal("13.50")
+                assert subjective_graded.json()["is_passed"] is True
+
+                my_results = await client.get(
+                    "/api/v1/my-results",
+                    headers=student_headers,
+                )
+                assert my_results.status_code == 200
+                assert Decimal(my_results.json()["items"][0]["score"]) == Decimal(
+                    "13.50"
+                )
+                exam_results = await client.get(
+                    f"/api/v1/exams/{exam_id}/results",
+                    headers=teacher_headers,
+                )
+                assert exam_results.status_code == 200
+                assert exam_results.json()["summary"]["graded_count"] == 1
+
                 forbidden = await client.get(
                     f"/api/v1/attempts/{attempt_id}",
                     headers=other_headers,
@@ -326,9 +381,20 @@ def test_mysql_student_attempt_and_five_answer_restore_flow() -> None:
                         )
                     )
                     assert len(answers) == 5
-                    assert all(answer.is_correct is None for answer in answers)
-                    assert all(answer.score_awarded is None for answer in answers)
-                    assert all(answer.grader_id is None for answer in answers)
+                    objective = [
+                        answer
+                        for answer in answers
+                        if answer.exam_question_id in question_ids[:3]
+                    ]
+                    manual = [
+                        answer
+                        for answer in answers
+                        if answer.exam_question_id in question_ids[3:]
+                    ]
+                    assert all(answer.is_correct is True for answer in objective)
+                    assert all(answer.score_awarded is not None for answer in answers)
+                    assert all(answer.grader_id is None for answer in objective)
+                    assert all(answer.grader_id is not None for answer in manual)
         finally:
             if created:
                 async with AsyncSessionFactory.begin() as session:

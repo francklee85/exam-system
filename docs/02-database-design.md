@@ -924,6 +924,9 @@ ExamAnswer
 | started_at      | DATETIME     | NOT NULL           | 开始时间     |
 | deadline_at     | DATETIME     | NOT NULL           | 本次实际截止时间 |
 | submitted_at    | DATETIME     | NULL               | 提交时间     |
+| submit_reason   | VARCHAR(20)  | NULL               | 提交原因：manual / timeout |
+| objective_score | DECIMAL(6,2) | NULL               | 客观题自动评分小计 |
+| manual_score    | DECIMAL(6,2) | NULL               | 人工题得分小计 |
 | score           | DECIMAL(6,2) | NULL               | 最终得分     |
 | is_passed       | BOOLEAN      | NULL               | 是否及格     |
 | created_at      | DATETIME     | NOT NULL           | 创建时间     |
@@ -947,6 +950,17 @@ graded
 
 纯客观题提交并自动评分完成后可直接进入 `graded`。包含人工题时，提交后进入
 `pending_manual_grading`；全部人工题阅卷完成后才进入 `graded`。
+
+`status` 只表达作答生命周期，`grading_status` 只表达评分生命周期：
+
+```text
+作答：in_progress → submitted
+评分：not_started → pending_manual_grading → graded
+```
+
+主动交卷保存 `submit_reason = manual`；惰性超时结算保存
+`submit_reason = timeout`。混合试卷交卷后仅写入 `objective_score`，
+`manual_score`、`score`、`is_passed` 保持 NULL；全部人工题完成后再写入三者。
 
 V1 每个学生每场考试只允许一次：
 
@@ -1264,6 +1278,11 @@ submitted_at = 当前时间
 
 然后写入最终 `score`、`is_passed`，并将 `grading_status` 改为 `graded`。
 
+所有人工题（包括未作答的人工题）均进入 `pending`，由教师明确给分。系统不因
+答案为空而擅自记 0 分，从而保持人工阅卷规则一致。教师可在
+`0 <= score_awarded <= exam_question.score` 范围内给部分分；修改已批分数后
+必须重新汇总 `manual_score`、最终 `score` 和 `is_passed`。
+
 ---
 
 # 31. 防重复提交
@@ -1309,6 +1328,11 @@ V1 可以采用以下策略：
 ```
 
 即使前端断网或关闭页面，后端仍以 deadline_at 为最终标准。
+
+V1 不引入定时任务，采用统一 `finalize_attempt` 的惰性超时结算：读取作答记录、
+保存答案或查询成绩时发现 `now >= deadline_at` 且仍为 `in_progress`，按
+`submit_reason = timeout` 执行与主动交卷相同的事务评分逻辑。超时提交时间以
+已冻结的 `deadline_at` 记录。
 
 ---
 

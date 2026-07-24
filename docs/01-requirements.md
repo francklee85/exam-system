@@ -1176,11 +1176,43 @@ V1 的题型评分方式固定为：
 
 人工阅卷完成前的客观题小计不是最终成绩，不得提前生成最终及格结论。
 
+所有填空题和主观问答题（包括未作答题）都进入人工阅卷。系统不因人工题未作答
+而自动记 0 分，也绝不比较 `reference_answer` 自动评分。教师必须在该题
+`0` 到满分范围内明确给分，可填写评语；修改已批分数后系统重新计算人工题小计、
+最终成绩和及格结论。
+
+作答状态与阅卷状态分离：
+
+```text
+attempt.status: in_progress / submitted
+attempt.grading_status: not_started / pending_manual_grading / graded
+```
+
+系统分别保存客观题小计 `objective_score`、人工题小计 `manual_score` 和最终
+`score`，并以 `submit_reason = manual / timeout` 区分主动交卷与超时结算。
+超时采用后端惰性结算，不依赖浏览器在线或定时任务。
+
 ------
 
 ## 29. 成绩管理
 
 教师可以查看某场考试的成绩列表。
+
+V1 交卷与混合阅卷接口职责：
+
+```text
+POST /api/v1/attempts/{attempt_id}/submit
+GET  /api/v1/grading/tasks
+GET  /api/v1/grading/attempts/{attempt_id}
+PUT  /api/v1/grading/attempts/{attempt_id}/answers/{exam_question_id}
+GET  /api/v1/my-results
+GET  /api/v1/my-results/{attempt_id}
+GET  /api/v1/exams/{exam_id}/results
+```
+
+学生只能提交和查看自己的 Attempt；教师只能阅自己创建考试的作答，管理员可阅全部。
+人工阅卷读取 `ExamQuestion` 快照中的题干、参考答案与满分，不得回读原 Question 或
+PaperQuestion。学生成绩接口不返回 `correct_answer` 或 `reference_answer`。
 
 需要显示：
 

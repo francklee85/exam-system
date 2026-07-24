@@ -8,12 +8,16 @@ import { ComingSoonPage } from '../pages/ComingSoonPage'
 import { ClassesPage } from '../pages/ClassesPage'
 import { DashboardPage } from '../pages/DashboardPage'
 import { ExamDetailPage } from '../pages/ExamDetailPage'
+import { ExamResultsPage } from '../pages/ExamResultsPage'
 import { ExamsPage } from '../pages/ExamsPage'
 import { ForbiddenPage } from '../pages/ForbiddenPage'
+import { GradingDetailPage } from '../pages/GradingDetailPage'
+import { GradingTasksPage } from '../pages/GradingTasksPage'
 import { LoginPage } from '../pages/LoginPage'
 import { MajorsPage } from '../pages/MajorsPage'
 import { MyExamDetailPage } from '../pages/MyExamDetailPage'
 import { MyExamsPage } from '../pages/MyExamsPage'
+import { MyResultsPage } from '../pages/MyResultsPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
 import { OnlineExamPage } from '../pages/OnlineExamPage'
 import { PaperDetailPage } from '../pages/PaperDetailPage'
@@ -38,6 +42,8 @@ const placeholderRoutes = navigationItems
         'papers',
         'exams',
         'my-exams',
+        'results',
+        'my-results',
       ].includes(item.key),
   )
   .map((item) => ({
@@ -153,6 +159,30 @@ export const router = createBrowserRouter([
             ),
           },
           {
+            path: '/exams/:examId/results',
+            element: (
+              <RoleRoute allowedRoles={['admin', 'teacher']}>
+                <ExamResultsPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/results',
+            element: (
+              <RoleRoute allowedRoles={['admin', 'teacher']}>
+                <GradingTasksPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/grading/:attemptId',
+            element: (
+              <RoleRoute allowedRoles={['admin', 'teacher']}>
+                <GradingDetailPage />
+              </RoleRoute>
+            ),
+          },
+          {
             path: '/my-exams',
             element: (
               <RoleRoute allowedRoles={['student']}>
@@ -173,6 +203,14 @@ export const router = createBrowserRouter([
             element: (
               <RoleRoute allowedRoles={['student']}>
                 <OnlineExamPage />
+              </RoleRoute>
+            ),
+          },
+          {
+            path: '/my-results',
+            element: (
+              <RoleRoute allowedRoles={['student']}>
+                <MyResultsPage />
               </RoleRoute>
             ),
           },

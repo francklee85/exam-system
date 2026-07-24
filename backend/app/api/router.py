@@ -11,6 +11,11 @@ from app.api.routes.health import router as health_router
 from app.api.routes.majors import router as majors_router
 from app.api.routes.papers import router as papers_router
 from app.api.routes.questions import router as questions_router
+from app.api.routes.results import (
+    exam_results_router,
+    grading_router,
+    my_results_router,
+)
 from app.api.routes.students import router as students_router
 from app.api.routes.teachers import router as teachers_router
 from app.api.routes.users import router as users_router
@@ -28,5 +33,8 @@ api_router.include_router(users_router, prefix=api_v1_prefix)
 api_router.include_router(questions_router, prefix=api_v1_prefix)
 api_router.include_router(papers_router, prefix=api_v1_prefix)
 api_router.include_router(exams_router, prefix=api_v1_prefix)
+api_router.include_router(exam_results_router, prefix=api_v1_prefix)
 api_router.include_router(my_exams_router, prefix=api_v1_prefix)
 api_router.include_router(attempts_router, prefix=api_v1_prefix)
+api_router.include_router(grading_router, prefix=api_v1_prefix)
+api_router.include_router(my_results_router, prefix=api_v1_prefix)

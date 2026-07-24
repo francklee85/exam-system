@@ -1,6 +1,7 @@
 import type { PaginationResponse } from '../types/common'
 import type {
   ExamAnswerPayload,
+  AttemptSubmission,
   ExamAttempt,
   MyExamDetail,
   MyExamListItem,
@@ -51,6 +52,15 @@ export async function saveAnswer(
     `${ATTEMPTS_PATH}/${attemptId}/answers/${examQuestionId}`,
     payload,
     { signal },
+  )
+  return response.data
+}
+
+export async function submitAttempt(
+  attemptId: number,
+): Promise<AttemptSubmission> {
+  const response = await apiClient.post<AttemptSubmission>(
+    `${ATTEMPTS_PATH}/${attemptId}/submit`,
   )
   return response.data
 }

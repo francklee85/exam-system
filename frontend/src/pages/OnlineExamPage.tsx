@@ -1,15 +1,19 @@
 import {
   ArrowLeftOutlined,
+  CheckCircleOutlined,
   ClockCircleOutlined,
   ReloadOutlined,
+  SendOutlined,
 } from '@ant-design/icons'
 import axios from 'axios'
 import {
   Alert,
+  App,
   Button,
   Card,
   Progress,
   Result,
+  Modal,
   Space,
   Spin,
   Tag,
@@ -19,10 +23,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { getApiErrorMessage } from '../api/errors'
-import { getAttempt, saveAnswer } from '../api/studentExams'
+import {
+  getAttempt,
+  saveAnswer,
+  submitAttempt,
+} from '../api/studentExams'
 import { StudentQuestionRenderer } from '../components/studentExams/StudentQuestionRenderer'
 import type {
   ExamAttempt,
+  AttemptSubmission,
   StudentExamQuestion,
 } from '../types/studentExam'
 
@@ -63,6 +72,7 @@ function isDeadlineConflict(error: unknown): boolean {
 }
 
 export function OnlineExamPage() {
+  const { message } = App.useApp()
   const navigate = useNavigate()
   const { attemptId: attemptIdParam } = useParams<{ attemptId: string }>()
   const attemptId = Number(attemptIdParam)
@@ -75,17 +85,22 @@ export function OnlineExamPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isLocked, setIsLocked] = useState(false)
   const [lockMessage, setLockMessage] = useState<string | null>(null)
+  const [submission, setSubmission] = useState<AttemptSubmission | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const answersRef = useRef<AnswerMap>({})
   const versionsRef = useRef(new Map<number, number>())
+  const savedVersionsRef = useRef(new Map<number, number>())
   const inFlightRef = useRef(new Set<number>())
   const timersRef = useRef(new Map<number, number>())
   const controllersRef = useRef(new Map<number, AbortController>())
   const lockedRef = useRef(false)
+  const failedQuestionsRef = useRef(new Set<number>())
   const clientDeadlineRef = useRef(0)
   const flushAnswerRef = useRef<(questionId: number) => Promise<void>>(
     async () => undefined,
   )
+  const timeoutFinalizeRef = useRef<() => Promise<void>>(async () => undefined)
 
   const lockExam = useCallback((message: string) => {
     if (lockedRef.current) {
@@ -128,6 +143,7 @@ export function OnlineExamPage() {
 
       answersRef.current = restoredAnswers
       versionsRef.current.clear()
+      savedVersionsRef.current.clear()
       setAnswers(restoredAnswers)
       setSaveStatuses(initialStatuses)
       setAttempt({ ...response, questions })
@@ -136,6 +152,23 @@ export function OnlineExamPage() {
       clientDeadlineRef.current = Date.now() + calibratedRemaining
 
       if (response.status !== 'in_progress') {
+        if (
+          response.submitted_at !== null &&
+          response.submit_reason !== null &&
+          response.objective_score !== null
+        ) {
+          setSubmission({
+            attempt_id: response.attempt_id,
+            status: response.status,
+            grading_status: response.grading_status,
+            submitted_at: response.submitted_at,
+            submit_reason: response.submit_reason,
+            objective_score: response.objective_score,
+            manual_score: response.manual_score,
+            score: response.score,
+            is_passed: response.is_passed,
+          })
+        }
         lockExam('当前考试已结束作答，不能继续修改答案。')
       } else if (calibratedRemaining <= 0) {
         lockExam('考试时间已结束，不能继续作答。')
@@ -160,7 +193,7 @@ export function OnlineExamPage() {
       const nextRemaining = Math.max(0, clientDeadlineRef.current - Date.now())
       setRemainingMs(nextRemaining)
       if (nextRemaining <= 0) {
-        lockExam('考试时间已结束，不能继续作答。')
+        void timeoutFinalizeRef.current()
       }
     }
     updateRemaining()
@@ -207,6 +240,8 @@ export function OnlineExamPage() {
           controller.signal,
         )
         if ((versionsRef.current.get(questionId) ?? 0) === version) {
+          savedVersionsRef.current.set(questionId, version)
+          failedQuestionsRef.current.delete(questionId)
           setSaveStatuses((current) => ({ ...current, [questionId]: 'saved' }))
         }
       } catch (error) {
@@ -218,6 +253,7 @@ export function OnlineExamPage() {
           return
         }
         if ((versionsRef.current.get(questionId) ?? 0) === version) {
+          failedQuestionsRef.current.add(questionId)
           setSaveStatuses((current) => ({ ...current, [questionId]: 'failed' }))
         }
       } finally {
@@ -234,6 +270,86 @@ export function OnlineExamPage() {
     [attemptId, lockExam],
   )
   flushAnswerRef.current = flushAnswer
+
+  const waitForPendingSaves = useCallback(async () => {
+    timersRef.current.forEach((timer) => window.clearTimeout(timer))
+    timersRef.current.clear()
+    const questionIds = [...versionsRef.current.keys()].filter(
+      (questionId) =>
+        (savedVersionsRef.current.get(questionId) ?? 0) <
+          (versionsRef.current.get(questionId) ?? 0) ||
+        failedQuestionsRef.current.has(questionId),
+    )
+    await Promise.all(
+      questionIds.map((questionId) => flushAnswerRef.current(questionId)),
+    )
+    while (inFlightRef.current.size > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, 20))
+    }
+    if (failedQuestionsRef.current.size > 0) {
+      throw new Error('存在尚未保存成功的答案')
+    }
+  }, [])
+
+  const finalize = useCallback(
+    async (isTimeout: boolean) => {
+      if (isSubmitting || submission !== null) {
+        return
+      }
+      setIsSubmitting(true)
+      try {
+        if (!isTimeout) {
+          await waitForPendingSaves()
+        }
+        const response = await submitAttempt(attemptId)
+        setSubmission(response)
+        setAttempt((current) =>
+          current === null
+            ? current
+            : {
+                ...current,
+                status: response.status,
+                grading_status: response.grading_status,
+                submitted_at: response.submitted_at,
+                submit_reason: response.submit_reason,
+                objective_score: response.objective_score,
+                manual_score: response.manual_score,
+                score: response.score,
+                is_passed: response.is_passed,
+              },
+        )
+        lockExam(
+          isTimeout
+            ? '考试时间已结束，系统已按截止时间自动交卷。'
+            : '考试已正式交卷，答案已锁定。',
+        )
+        void message.success(isTimeout ? '考试已超时交卷' : '交卷成功')
+      } catch (error) {
+        if (isTimeout || isDeadlineConflict(error)) {
+          lockExam('考试时间已结束，不能继续作答。')
+          try {
+            const refreshed = await getAttempt(attemptId)
+            setAttempt(refreshed)
+          } catch {
+            // 页面已经按 deadline 锁定，稍后重新进入可读取惰性结算结果。
+          }
+        } else {
+          void message.error(getApiErrorMessage(error, '交卷失败，请确认答案均已保存'))
+        }
+      } finally {
+        setIsSubmitting(false)
+      }
+    },
+    [
+      attemptId,
+      isSubmitting,
+      lockExam,
+      message,
+      submission,
+      waitForPendingSaves,
+    ],
+  )
+  timeoutFinalizeRef.current = () => finalize(true)
 
   const updateAnswer = useCallback(
     (questionId: number, answer: string[] | null, debounceMs: number) => {
@@ -284,6 +400,21 @@ export function OnlineExamPage() {
       if (status === 'failed') {
         void flushAnswerRef.current(Number(questionId))
       }
+    })
+  }
+
+  const confirmSubmit = () => {
+    const unanswered = questions.length - answeredCount
+    Modal.confirm({
+      title: '确认正式交卷吗？',
+      content:
+        unanswered > 0
+          ? `还有 ${unanswered} 道题未作答。交卷后不能再修改答案，确认继续吗？`
+          : '交卷后不能再修改答案，确认继续吗？',
+      okText: '确认交卷',
+      cancelText: '继续作答',
+      okButtonProps: { danger: true },
+      onOk: () => finalize(false),
     })
   }
 
@@ -395,6 +526,28 @@ export function OnlineExamPage() {
         />
       )}
 
+      {submission !== null && (
+        <Alert
+          className="exam-deadline-alert"
+          type={submission.grading_status === 'graded' ? 'success' : 'info'}
+          showIcon
+          icon={<CheckCircleOutlined />}
+          message={
+            submission.grading_status === 'graded'
+              ? `已完成，最终成绩 ${submission.score}`
+              : '已交卷，等待教师人工阅卷'
+          }
+          description={
+            submission.grading_status === 'graded'
+              ? `客观题得分 ${submission.objective_score}，${submission.is_passed ? '及格' : '不及格'}。`
+              : `客观题得分 ${submission.objective_score}，最终成绩将在人工阅卷完成后生成。`
+          }
+          action={
+            <Button onClick={() => navigate('/my-results')}>查看我的成绩</Button>
+          }
+        />
+      )}
+
       <div className="online-exam-workspace">
         <Card
           className="online-question-card"
@@ -470,6 +623,19 @@ export function OnlineExamPage() {
             <Tag color="green">已答</Tag>
             <Tag>未答</Tag>
           </Space>
+          {!isLocked && (
+            <Button
+              block
+              danger
+              type="primary"
+              icon={<SendOutlined />}
+              loading={isSubmitting}
+              data-e2e="submit-attempt"
+              onClick={confirmSubmit}
+            >
+              正式交卷
+            </Button>
+          )}
         </Card>
       </div>
     </div>

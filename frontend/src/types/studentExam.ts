@@ -8,6 +8,7 @@ export type AttemptGradingStatus =
   | 'not_started'
   | 'pending_manual_grading'
   | 'graded'
+export type SubmitReason = 'manual' | 'timeout'
 
 export interface MyExamListItem {
   exam_id: number
@@ -58,8 +59,26 @@ export interface ExamAttempt {
   grading_status: AttemptGradingStatus
   started_at: string
   deadline_at: string
+  submitted_at: string | null
+  submit_reason: SubmitReason | null
+  objective_score: DecimalString | null
+  manual_score: DecimalString | null
+  score: DecimalString | null
+  is_passed: boolean | null
   server_time: string
   questions: StudentExamQuestion[]
+}
+
+export interface AttemptSubmission {
+  attempt_id: number
+  status: ExamAttemptStatus
+  grading_status: AttemptGradingStatus
+  submitted_at: string
+  submit_reason: SubmitReason
+  objective_score: DecimalString
+  manual_score: DecimalString | null
+  score: DecimalString | null
+  is_passed: boolean | null
 }
 
 export interface ExamAnswerPayload {

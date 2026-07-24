@@ -59,7 +59,7 @@ export const navigationItems: readonly NavigationItem[] = [
     path: '/questions',
     label: '题库管理',
     allowedRoles: ['admin', 'teacher'],
-    description: '维护单选题、多选题和判断题',
+    description: '维护五种题型及其阅卷方式',
   },
   {
     key: 'papers',
@@ -78,9 +78,9 @@ export const navigationItems: readonly NavigationItem[] = [
   {
     key: 'results',
     path: '/results',
-    label: '成绩管理',
-    allowedRoles: ['teacher'],
-    description: '成绩管理将在后续轮次实现',
+    label: '阅卷管理',
+    allowedRoles: ['admin', 'teacher'],
+    description: '人工阅卷与成绩汇总',
   },
   {
     key: 'my-exams',
@@ -94,7 +94,7 @@ export const navigationItems: readonly NavigationItem[] = [
     path: '/my-results',
     label: '我的成绩',
     allowedRoles: ['student'],
-    description: '我的成绩将在后续轮次实现',
+    description: '查看待阅卷状态与最终成绩',
   },
 ]
 

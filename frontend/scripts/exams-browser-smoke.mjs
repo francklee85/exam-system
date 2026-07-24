@@ -57,7 +57,11 @@ const results = {
   studentAnswersRestored: false,
   repeatedStartRestoresAttempt: false,
   latestSubjectiveAnswerWins: false,
-  deadlineLocksStudentUi: false,
+  mixedAttemptSubmitted: false,
+  teacherManualGradingCompleted: false,
+  studentFinalResultVisible: false,
+  teacherExamResultsVisible: false,
+  pureObjectiveImmediatelyGraded: false,
 }
 
 const browser = await puppeteer.launch({
@@ -71,6 +75,7 @@ let setup
 let paper
 let exam
 let liveExam
+let pureExam
 let currentStage = 'start'
 
 try {
@@ -203,7 +208,7 @@ try {
     originalSnapshots[0].options[0].content === 'pwd' &&
     originalSnapshots[0].correct_answer.join(',') === 'A' &&
     originalSnapshots.map((item) => item.score).join(',') ===
-      '10.00,10.00,10.00,20.00,50.00'
+      '20.00,20.00,20.00,15.00,25.00'
 
   const subjectiveSnapshot = originalSnapshots.find(
     (item) => item.question_type === 'subjective',
@@ -286,9 +291,16 @@ try {
   results.adminSeesTeacherExam = true
 
   currentStage = 'create-live-student-exam'
+  await login(page, teacher.username, teacher.password)
   liveExam = await createLiveExamByApi(page, {
     name: `学生在线五题型考试 [${suffix}]`,
     paperId: paper.id,
+    classId: setup.classRecord.id,
+  })
+  const purePaper = await createPureObjectivePaper(page, questions)
+  pureExam = await createLiveExamByApi(page, {
+    name: `学生纯客观考试 [${suffix}]`,
+    paperId: purePaper.id,
     classId: setup.classRecord.id,
   })
 
@@ -340,7 +352,8 @@ try {
   await selectStudentOption(page, attempt.questions[0].exam_question_id, 'A')
   await page.click('[data-e2e="question-nav-2"]')
   await selectStudentOption(page, attempt.questions[1].exam_question_id, 'A')
-  await selectStudentOption(page, attempt.questions[1].exam_question_id, 'C')
+  await selectStudentOption(page, attempt.questions[1].exam_question_id, 'B')
+  await selectStudentOption(page, attempt.questions[1].exam_question_id, 'D')
   await page.click('[data-e2e="question-nav-3"]')
   await selectStudentOption(page, attempt.questions[2].exam_question_id, 'true')
   await page.click('[data-e2e="question-nav-4"]')
@@ -366,7 +379,7 @@ try {
   )
   results.fiveStudentAnswersSaved =
     restoredAttempt.questions.map((question) => JSON.stringify(question.saved_answer)).join('|') ===
-    '["A"]|["A","C"]|["true"]|["root"]|["第一行回答\\n第二行回答"]'
+    '["A"]|["A","B","D"]|["true"]|["root"]|["第一行回答\\n第二行回答"]'
 
   currentStage = 'student-refresh-restore'
   await page.reload({ waitUntil: 'domcontentloaded' })
@@ -424,16 +437,106 @@ try {
   )
   await page.waitForSelector('[data-e2e="online-exam"]')
 
-  currentStage = 'student-deadline-lock'
-  await page.waitForFunction(
-    () =>
-      document.body.textContent?.includes('考试时间已结束，不能继续作答。') &&
-      [...document.querySelectorAll('input, textarea')].every(
-        (control) => control.disabled || control.getAttribute('aria-hidden') === 'true',
-      ),
-    { timeout: 70_000 },
+  currentStage = 'student-submit-mixed'
+  const submitResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/v1/attempts/${attempt.attempt_id}/submit`) &&
+      response.request().method() === 'POST' &&
+      response.status() === 200,
   )
-  results.deadlineLocksStudentUi = true
+  await page.click('[data-e2e="submit-attempt"]')
+  await clickButtonByText(page, '确认交卷')
+  const submitted = await (await submitResponse).json()
+  await waitForText(page, '已交卷，等待教师人工阅卷')
+  results.mixedAttemptSubmitted =
+    submitted.grading_status === 'pending_manual_grading' &&
+    submitted.objective_score === '60.00' &&
+    submitted.score === null
+
+  currentStage = 'teacher-manual-grading'
+  await login(page, teacher.username, teacher.password)
+  await page.goto(`${frontendUrl}/results`, { waitUntil: 'domcontentloaded' })
+  await waitForText(page, liveExam.name)
+  await page.click(`[data-e2e="grade-attempt-${attempt.attempt_id}"]`)
+  await page.waitForSelector('[data-e2e="grading-detail-page"]')
+  await setNumberInput(page, '[aria-label="第4题给分"]', '12')
+  await clearAndType(page, '[aria-label="第4题评语"]', '填空题基本正确')
+  const firstGrade = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(
+        `/grading/attempts/${attempt.attempt_id}/answers/${attempt.questions[3].exam_question_id}`,
+      ) &&
+      response.request().method() === 'PUT' &&
+      response.status() === 200,
+  )
+  await page.click('[data-e2e="save-grade-4"]')
+  await firstGrade
+  await setNumberInput(page, '[aria-label="第5题给分"]', '20')
+  await clearAndType(page, '[aria-label="第5题评语"]', '主观题说明完整')
+  const finalGrade = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(
+        `/grading/attempts/${attempt.attempt_id}/answers/${attempt.questions[4].exam_question_id}`,
+      ) &&
+      response.request().method() === 'PUT' &&
+      response.status() === 200,
+  )
+  await page.click('[data-e2e="save-grade-5"]')
+  const graded = await (await finalGrade).json()
+  await waitForText(page, '阅卷完成，最终成绩 92.00，及格')
+  results.teacherManualGradingCompleted =
+    graded.grading_status === 'graded' &&
+    graded.objective_score === '60.00' &&
+    graded.manual_score === '32.00' &&
+    graded.score === '92.00' &&
+    graded.is_passed === true
+
+  currentStage = 'teacher-exam-results'
+  await page.goto(`${frontendUrl}/exams/${liveExam.id}/results`, {
+    waitUntil: 'domcontentloaded',
+  })
+  await waitForText(page, student.realName)
+  await waitForText(page, '92.00')
+  results.teacherExamResultsVisible = true
+
+  currentStage = 'student-final-result'
+  await login(page, student.username, student.password)
+  await page.goto(`${frontendUrl}/my-results`, { waitUntil: 'domcontentloaded' })
+  await waitForText(page, liveExam.name)
+  await waitForText(page, '92.00 / 100.00')
+  results.studentFinalResultVisible = true
+
+  currentStage = 'pure-objective-submit'
+  const pureStarted = await browserRequest(
+    page,
+    `/api/v1/my-exams/${pureExam.id}/start`,
+    { method: 'POST' },
+  )
+  await page.goto(`${frontendUrl}/attempts/${pureStarted.attempt_id}`, {
+    waitUntil: 'domcontentloaded',
+  })
+  await page.waitForSelector('[data-e2e="online-exam"]')
+  await selectStudentOption(page, pureStarted.questions[0].exam_question_id, 'A')
+  await page.click('[data-e2e="question-nav-2"]')
+  await selectStudentOption(page, pureStarted.questions[1].exam_question_id, 'A')
+  await selectStudentOption(page, pureStarted.questions[1].exam_question_id, 'B')
+  await selectStudentOption(page, pureStarted.questions[1].exam_question_id, 'D')
+  await page.click('[data-e2e="question-nav-3"]')
+  await selectStudentOption(page, pureStarted.questions[2].exam_question_id, 'true')
+  const pureSubmitResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/v1/attempts/${pureStarted.attempt_id}/submit`) &&
+      response.request().method() === 'POST' &&
+      response.status() === 200,
+  )
+  await page.click('[data-e2e="submit-attempt"]')
+  await clickButtonByText(page, '确认交卷')
+  const pureSubmitted = await (await pureSubmitResponse).json()
+  await waitForText(page, '已完成，最终成绩 60.00')
+  results.pureObjectiveImmediatelyGraded =
+    pureSubmitted.grading_status === 'graded' &&
+    pureSubmitted.score === '60.00' &&
+    pureSubmitted.is_passed === true
 
   if (screenshotPrefix) {
     await page.screenshot({ path: `${screenshotPrefix}-student-attempt.png`, fullPage: true })
@@ -614,7 +717,30 @@ async function createActivePaper(page, questions) {
     body: {
       items: questions.map((question, index) => ({
         question_id: question.id,
-        score: ['10.00', '10.00', '10.00', '20.00', '50.00'][index],
+        score: ['20.00', '20.00', '20.00', '15.00', '25.00'][index],
+      })),
+    },
+  })
+  return browserRequest(page, `/api/v1/papers/${created.id}/status`, {
+    method: 'PATCH',
+    body: { status: 'active' },
+  })
+}
+
+async function createPureObjectivePaper(page, questions) {
+  let created = await browserRequest(page, '/api/v1/papers', {
+    method: 'POST',
+    body: {
+      name: `Linux 纯客观联调试卷 [${suffix}]`,
+      description: '浏览器纯客观评分联调',
+    },
+  })
+  created = await browserRequest(page, `/api/v1/papers/${created.id}/questions`, {
+    method: 'POST',
+    body: {
+      items: questions.slice(0, 3).map((question) => ({
+        question_id: question.id,
+        score: '20.00',
       })),
     },
   })
@@ -650,7 +776,7 @@ async function createLiveExamByApi(page, { name, paperId, classId }) {
       paper_id: paperId,
       description: '学生在线考试浏览器联调',
       start_time: formatUtcNaive(now - 60_000),
-      end_time: formatUtcNaive(now + 45_000),
+      end_time: formatUtcNaive(now + 10 * 60_000),
       duration_minutes: 90,
       pass_score: '60.00',
       target: { target_type: 'class', target_id: classId },

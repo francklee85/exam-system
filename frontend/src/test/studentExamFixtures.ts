@@ -116,6 +116,12 @@ export const inProgressAttempt: ExamAttempt = {
   grading_status: 'not_started',
   started_at: '2026-07-24T01:10:00',
   deadline_at: '2026-07-24T02:40:00',
+  submitted_at: null,
+  submit_reason: null,
+  objective_score: null,
+  manual_score: null,
+  score: null,
+  is_passed: null,
   server_time: '2026-07-24T01:20:00',
   questions: studentQuestionFixtures,
 }

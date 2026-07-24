@@ -18,9 +18,11 @@ from app.modules.attempts.enums import (
     AnswerGradingStatus,
     AttemptGradingStatus,
     ExamAttemptStatus,
+    SubmitReason,
 )
 from app.modules.attempts.models import ExamAnswer, ExamAttempt
 from app.modules.attempts.schemas import (
+    AttemptSubmissionResponse,
     ExamAttemptResponse,
     MyExamDetail,
     MyExamListItem,
@@ -35,6 +37,7 @@ from app.modules.exams.enums import (
 )
 from app.modules.exams.models import Exam, ExamQuestion, ExamTarget
 from app.modules.questions.enums import (
+    AUTO_GRADED_QUESTION_TYPES,
     CHOICE_QUESTION_TYPES,
     MANUAL_GRADED_QUESTION_TYPES,
     QuestionType,
@@ -44,6 +47,7 @@ from app.modules.users.models import User
 
 MAX_MANUAL_ANSWER_LENGTH = 20_000
 FORMAL_EXAM_STATUSES = (ExamStatus.PUBLISHED, ExamStatus.FINISHED)
+ZERO_SCORE = Decimal("0.00")
 
 
 @dataclass(frozen=True)
@@ -293,6 +297,9 @@ async def start_exam(
         started_at=current_time,
         deadline_at=deadline_at,
         submitted_at=None,
+        submit_reason=None,
+        objective_score=None,
+        manual_score=None,
         score=None,
         is_passed=None,
     )
@@ -359,7 +366,24 @@ async def _get_attempt_response_by_user_id(
     *,
     now: datetime | None = None,
 ) -> ExamAttemptResponse:
-    attempt = await _get_owned_attempt(session, attempt_id, student_user_id)
+    current_time = now or utc_now()
+    attempt = await _get_owned_attempt(
+        session,
+        attempt_id,
+        student_user_id,
+        for_update=True,
+    )
+    if (
+        attempt.status == ExamAttemptStatus.IN_PROGRESS
+        and current_time >= attempt.deadline_at
+    ):
+        await finalize_attempt(
+            session,
+            attempt,
+            submit_reason=SubmitReason.TIMEOUT,
+            now=current_time,
+        )
+        await session.commit()
     statement = (
         select(ExamQuestion, ExamAnswer)
         .outerjoin(
@@ -388,9 +412,160 @@ async def _get_attempt_response_by_user_id(
         grading_status=attempt.grading_status,
         started_at=attempt.started_at,
         deadline_at=attempt.deadline_at,
-        server_time=now or utc_now(),
+        submitted_at=attempt.submitted_at,
+        submit_reason=attempt.submit_reason,
+        objective_score=attempt.objective_score,
+        manual_score=attempt.manual_score,
+        score=attempt.score,
+        is_passed=attempt.is_passed,
+        server_time=current_time,
         questions=questions,
     )
+
+
+def _answers_match(
+    student_answer: list[str] | None,
+    correct_answer: list[str] | None,
+) -> bool:
+    if not student_answer or not correct_answer:
+        return False
+    return set(student_answer) == set(correct_answer)
+
+
+async def finalize_attempt(
+    session: AsyncSession,
+    attempt: ExamAttempt,
+    *,
+    submit_reason: SubmitReason,
+    now: datetime | None = None,
+) -> ExamAttempt:
+    """Finalize one attempt once, using immutable exam-question snapshots."""
+    if attempt.status != ExamAttemptStatus.IN_PROGRESS:
+        return attempt
+
+    current_time = now or utc_now()
+    snapshots = list(
+        await session.scalars(
+            select(ExamQuestion)
+            .where(ExamQuestion.exam_id == attempt.exam_id)
+            .order_by(ExamQuestion.sort_order)
+        )
+    )
+    if not snapshots:
+        raise ResourceConflictError("考试题目快照不完整，无法交卷")
+
+    answers = list(
+        await session.scalars(
+            select(ExamAnswer).where(ExamAnswer.attempt_id == attempt.id)
+        )
+    )
+    answers_by_question = {answer.exam_question_id: answer for answer in answers}
+    objective_score = ZERO_SCORE
+    has_manual_questions = False
+
+    for snapshot in snapshots:
+        answer = answers_by_question.get(snapshot.id)
+        if answer is None:
+            answer = ExamAnswer(
+                attempt_id=attempt.id,
+                exam_question_id=snapshot.id,
+                answer=None,
+                answered_at=None,
+            )
+            session.add(answer)
+            answers_by_question[snapshot.id] = answer
+
+        if snapshot.question_type in AUTO_GRADED_QUESTION_TYPES:
+            is_correct = _answers_match(answer.answer, snapshot.correct_answer)
+            awarded = snapshot.score if is_correct else ZERO_SCORE
+            answer.is_correct = is_correct
+            answer.score_awarded = awarded
+            answer.grading_status = AnswerGradingStatus.GRADED
+            answer.grader_id = None
+            answer.grading_comment = None
+            answer.graded_at = current_time
+            objective_score += awarded
+        elif snapshot.question_type in MANUAL_GRADED_QUESTION_TYPES:
+            has_manual_questions = True
+            answer.is_correct = None
+            answer.score_awarded = None
+            answer.grading_status = AnswerGradingStatus.PENDING
+            answer.grader_id = None
+            answer.grading_comment = None
+            answer.graded_at = None
+        else:
+            raise ResourceConflictError("考试题型不受支持")
+
+    attempt.status = ExamAttemptStatus.SUBMITTED
+    attempt.submitted_at = (
+        attempt.deadline_at
+        if submit_reason == SubmitReason.TIMEOUT
+        else current_time
+    )
+    attempt.submit_reason = submit_reason
+    attempt.objective_score = objective_score
+    if has_manual_questions:
+        attempt.grading_status = AttemptGradingStatus.PENDING_MANUAL_GRADING
+        attempt.manual_score = None
+        attempt.score = None
+        attempt.is_passed = None
+    else:
+        attempt.grading_status = AttemptGradingStatus.GRADED
+        attempt.manual_score = ZERO_SCORE
+        attempt.score = objective_score
+        attempt.is_passed = objective_score >= attempt.exam.pass_score
+    await session.flush()
+    return attempt
+
+
+def _submission_response(attempt: ExamAttempt) -> AttemptSubmissionResponse:
+    if (
+        attempt.submitted_at is None
+        or attempt.submit_reason is None
+        or attempt.objective_score is None
+    ):
+        raise ResourceConflictError("考试交卷状态不完整")
+    return AttemptSubmissionResponse(
+        attempt_id=attempt.id,
+        status=attempt.status,
+        grading_status=attempt.grading_status,
+        submitted_at=attempt.submitted_at,
+        submit_reason=attempt.submit_reason,
+        objective_score=attempt.objective_score,
+        manual_score=attempt.manual_score,
+        score=attempt.score,
+        is_passed=attempt.is_passed,
+    )
+
+
+async def submit_attempt(
+    session: AsyncSession,
+    attempt_id: int,
+    current_user: User,
+    *,
+    now: datetime | None = None,
+) -> AttemptSubmissionResponse:
+    current_time = now or utc_now()
+    attempt = await _get_owned_attempt(
+        session,
+        attempt_id,
+        current_user.id,
+        for_update=True,
+    )
+    if attempt.status == ExamAttemptStatus.IN_PROGRESS:
+        reason = (
+            SubmitReason.TIMEOUT
+            if current_time >= attempt.deadline_at
+            else SubmitReason.MANUAL
+        )
+        await finalize_attempt(
+            session,
+            attempt,
+            submit_reason=reason,
+            now=current_time,
+        )
+        await session.commit()
+    return _submission_response(attempt)
 
 
 def _snapshot_option_keys(snapshot: ExamQuestion) -> list[str]:
@@ -471,7 +646,14 @@ async def save_answer(
     )
     if attempt.status != ExamAttemptStatus.IN_PROGRESS:
         raise ResourceConflictError("当前考试状态不允许保存答案")
-    if current_time > attempt.deadline_at:
+    if current_time >= attempt.deadline_at:
+        await finalize_attempt(
+            session,
+            attempt,
+            submit_reason=SubmitReason.TIMEOUT,
+            now=current_time,
+        )
+        await session.commit()
         raise ResourceConflictError("考试作答时间已结束")
 
     snapshot = await session.scalar(

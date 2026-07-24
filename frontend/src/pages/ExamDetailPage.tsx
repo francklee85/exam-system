@@ -1,5 +1,6 @@
 import {
   ArrowLeftOutlined,
+  BarChartOutlined,
   EditOutlined,
   RocketOutlined,
 } from '@ant-design/icons'
@@ -113,6 +114,14 @@ export function ExamDetailPage() {
           返回考试列表
         </Button>
         <Space wrap>
+          {!isDraft && (
+            <Button
+              icon={<BarChartOutlined />}
+              onClick={() => navigate(`/exams/${exam.id}/results`)}
+            >
+              考试成绩
+            </Button>
+          )}
           {isDraft && (
             <>
               <Button

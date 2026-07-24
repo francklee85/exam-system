@@ -4,7 +4,11 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.attempts.enums import AttemptGradingStatus, ExamAttemptStatus
+from app.modules.attempts.enums import (
+    AttemptGradingStatus,
+    ExamAttemptStatus,
+    SubmitReason,
+)
 from app.modules.exams.enums import ExamRuntimeStatus, ExamStatus
 from app.modules.exams.models import ExamQuestion
 from app.modules.questions.enums import QuestionType
@@ -83,8 +87,26 @@ class ExamAttemptResponse(BaseModel):
     grading_status: AttemptGradingStatus
     started_at: datetime
     deadline_at: datetime
+    submitted_at: datetime | None
+    submit_reason: SubmitReason | None
+    objective_score: Decimal | None
+    manual_score: Decimal | None
+    score: Decimal | None
+    is_passed: bool | None
     server_time: datetime
     questions: list[StudentExamQuestionResponse]
+
+
+class AttemptSubmissionResponse(BaseModel):
+    attempt_id: int
+    status: ExamAttemptStatus
+    grading_status: AttemptGradingStatus
+    submitted_at: datetime
+    submit_reason: SubmitReason
+    objective_score: Decimal
+    manual_score: Decimal | None
+    score: Decimal | None
+    is_passed: bool | None
 
 
 class AnswerSaveRequest(BaseModel):

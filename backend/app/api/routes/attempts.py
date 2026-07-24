@@ -6,6 +6,7 @@ from app.core.schemas import PageResponse
 from app.modules.attempts import service
 from app.modules.attempts.schemas import (
     AnswerSaveRequest,
+    AttemptSubmissionResponse,
     ExamAttemptResponse,
     MyExamDetail,
     MyExamListItem,
@@ -82,5 +83,21 @@ async def save_answer(
         attempt_id,
         exam_question_id,
         payload.answer,
+        current_user,
+    )
+
+
+@attempts_router.post(
+    "/{attempt_id}/submit",
+    response_model=AttemptSubmissionResponse,
+)
+async def submit_attempt(
+    attempt_id: Annotated[int, Path(gt=0)],
+    session: SessionDependency,
+    current_user: StudentOnly,
+) -> AttemptSubmissionResponse:
+    return await service.submit_attempt(
+        session,
+        attempt_id,
         current_user,
     )
