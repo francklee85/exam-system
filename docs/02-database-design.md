@@ -422,6 +422,23 @@ correct_answer = NULL
 快照时，降级回旧 Schema 无法无损完成。对应 Migration 必须明确拒绝这种降级，
 由运维先显式迁移或清理人工题数据；禁止伪造 `correct_answer`。
 
+## 11.1 Markdown 导入的数据落库原则
+
+Markdown 批量导入不增加中间表、导入任务表或原始文档字段。解析后的合法题目仍写入
+现有 `questions` / `question_options`，并遵守完全相同的五题型约束：
+
+* 创建人来自当前 JWT 用户，客户端不能指定 `created_by`
+* 初始状态为 `active`
+* 选择题选项写入 `question_options`
+* 判断、填空、主观题不产生选项记录
+* 自动题写入规范化 `correct_answer`，人工题保持 `NULL`
+* 人工题可写入多行 `reference_answer`
+
+预览结果不是可信写入凭证。确认导入时后端必须重新解析原 Markdown，并再次调用
+Question Service 校验。所有合法题目在一个事务中创建；格式非法或业务校验失败的题目
+不写入。Markdown 原文、AI Prompt 和解析错误仅用于当前交互，不持久化到考试核心表，
+因此本功能不需要新的数据库 Migration。
+
 ---
 
 # 12. question_options 题目选项表

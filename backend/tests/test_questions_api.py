@@ -862,3 +862,297 @@ def test_openapi_exposes_five_types_nullable_answers_and_reference_answer() -> N
     assert "reference_answer" in write_schema["properties"]
     assert "correct_answer" in write_schema["properties"]
     assert {"type": "null"} in write_schema["properties"]["correct_answer"]["anyOf"]
+
+
+MARKDOWN_IMPORT_SAMPLE = """# Linux 基础题库
+
+说明文字不会作为题目解析。
+
+## 题目
+
+类型：单选题
+难度：简单
+
+### 题干
+
+以下命令输出当前目录：
+
+```bash
+pwd
+```
+
+### 选项
+
+- a. cd
+- b. pwd
+
+### 正确答案
+
+b
+
+### 解析
+
+`pwd` 输出当前工作目录。
+
+---
+
+## 题目
+
+类型：多选题
+难度：中等
+
+### 题干
+
+以下哪些属于 Linux 文件系统？
+
+### 选项
+
+- A. ext4
+- B. XFS
+- C. NTFS
+- D. Btrfs
+
+### 正确答案
+
+d, a, b
+
+---
+
+## 题目
+
+类型：判断题
+难度：简单
+
+### 题干
+
+代码块中的题目标记不应分割：
+
+```markdown
+## 题目
+### 选项
+```
+
+### 正确答案
+
+正确
+
+---
+
+## 题目
+
+类型：填空题
+难度：简单
+
+### 题干
+
+Linux 默认超级用户名称是 ______。
+
+### 参考答案
+
+root
+
+---
+
+## 题目
+
+类型：主观问答题
+难度：中等
+
+### 题干
+
+请简述容器与虚拟机的区别。
+
+### 参考答案
+
+容器共享宿主机内核。
+虚拟机运行完整 Guest OS。
+
+### 解析
+
+考查虚拟化基础。
+"""
+
+
+def test_markdown_preview_parses_five_types_and_preserves_code_blocks() -> None:
+    response = _request(
+        "POST",
+        "/api/v1/questions/import/preview",
+        json={"markdown": MARKDOWN_IMPORT_SAMPLE},
+        user_id=TEACHER_USER_ID,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_count"] == 5
+    assert body["valid_count"] == 5
+    assert body["invalid_count"] == 0
+    assert [item["question_type"] for item in body["items"]] == [
+        "single_choice",
+        "multiple_choice",
+        "true_false",
+        "fill_blank",
+        "subjective",
+    ]
+    assert "```bash\npwd\n```" in body["items"][0]["payload"]["content"]
+    assert body["items"][0]["payload"]["correct_answer"] == ["B"]
+    assert body["items"][1]["payload"]["correct_answer"] == ["A", "B", "D"]
+    assert body["items"][2]["payload"]["correct_answer"] == ["true"]
+    assert body["items"][3]["payload"]["correct_answer"] is None
+    assert body["items"][3]["payload"]["reference_answer"] == "root"
+    assert "Guest OS" in body["items"][4]["payload"]["reference_answer"]
+
+
+def test_markdown_preview_reports_question_line_and_business_errors() -> None:
+    markdown = """## 题目
+类型：单选题
+难度：普通
+### 题干
+非法单选
+### 选项
+- A. 唯一选项
+### 正确答案
+A,B
+
+## 题目
+类型：填空题
+难度：简单
+### 题干
+Linux 用户是 ______。
+### 正确答案
+root
+"""
+    response = _request(
+        "POST",
+        "/api/v1/questions/import/preview",
+        json={"markdown": markdown},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_count"] == 2
+    assert body["valid_count"] == 0
+    assert body["invalid_count"] == 2
+    assert all(error["line"] is not None for item in body["items"] for error in item["errors"])
+    messages = [
+        error["message"]
+        for item in body["items"]
+        for error in item["errors"]
+    ]
+    assert any("不支持难度" in message for message in messages)
+    assert any("不能包含“### 正确答案”" in message for message in messages)
+
+
+def test_markdown_preview_requires_fixed_markers_and_headings() -> None:
+    no_marker = _request(
+        "POST",
+        "/api/v1/questions/import/preview",
+        json={"markdown": "# 只有标题"},
+    )
+    unsupported_heading = _request(
+        "POST",
+        "/api/v1/questions/import/preview",
+        json={
+            "markdown": """## 题目
+类型：判断题
+难度：简单
+### 题干
+测试
+### 答案
+正确
+"""
+        },
+    )
+
+    assert no_marker.status_code == 200
+    assert "未找到题目起始标记" in no_marker.json()["document_errors"][0]["message"]
+    assert unsupported_heading.status_code == 200
+    assert any(
+        "不支持字段标题" in error["message"]
+        for error in unsupported_heading.json()["items"][0]["errors"]
+    )
+
+
+def test_markdown_import_creates_valid_items_and_skips_invalid_items() -> None:
+    async def scenario(client: AsyncClient) -> None:
+        headers = {
+            "Authorization": f"Bearer {create_access_token(TEACHER_USER_ID)}"
+        }
+        markdown = (
+            MARKDOWN_IMPORT_SAMPLE
+            + """
+
+## 题目
+类型：主观问答题
+难度：困难
+### 题干
+非法人工题
+### 选项
+- A. 不允许
+"""
+        )
+        imported = await client.post(
+            "/api/v1/questions/import",
+            headers=headers,
+            json={"markdown": markdown},
+        )
+        listed = await client.get(
+            "/api/v1/questions?page=1&page_size=100",
+            headers=headers,
+        )
+
+        assert imported.status_code == 201
+        body = imported.json()
+        assert body["total_count"] == 6
+        assert body["imported_count"] == 5
+        assert body["skipped_count"] == 1
+        assert [item["status"] for item in body["items"]] == [
+            "imported",
+            "imported",
+            "imported",
+            "imported",
+            "imported",
+            "skipped",
+        ]
+        assert listed.json()["total"] == 6
+        imported_questions = [
+            item
+            for item in listed.json()["items"]
+            if item["content"] != "Linux 中查看当前工作目录的命令？"
+        ]
+        assert len(imported_questions) == 5
+        assert all(item["created_by"]["id"] == TEACHER_USER_ID for item in imported_questions)
+
+    _run_scenario(scenario)
+
+
+@pytest.mark.parametrize("path", ["/api/v1/questions/import/preview", "/api/v1/questions/import"])
+def test_markdown_import_permissions(path: str) -> None:
+    student = _request(
+        "POST",
+        path,
+        json={"markdown": MARKDOWN_IMPORT_SAMPLE},
+        user_id=STUDENT_USER_ID,
+    )
+    anonymous = _request(
+        "POST",
+        path,
+        json={"markdown": MARKDOWN_IMPORT_SAMPLE},
+        user_id=None,
+    )
+
+    assert student.status_code == 403
+    assert anonymous.status_code == 401
+
+
+def test_markdown_import_openapi_contract_is_explicit() -> None:
+    schema = app.openapi()
+    assert "/api/v1/questions/import/preview" in schema["paths"]
+    assert "/api/v1/questions/import" in schema["paths"]
+    preview_schema = schema["components"]["schemas"]["MarkdownImportPreviewResponse"]
+    assert {
+        "total_count",
+        "valid_count",
+        "invalid_count",
+        "document_errors",
+        "items",
+    }.issubset(preview_schema["properties"])

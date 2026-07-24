@@ -386,6 +386,68 @@ input {
   justify-content: flex-end;
 }
 
+.markdown-import-intro,
+.markdown-import-guide,
+.markdown-import-input {
+  margin-bottom: 18px;
+}
+
+.question-markdown-import-drawer .ant-drawer-content-wrapper {
+  max-width: 96vw;
+}
+
+.markdown-import-guide .ant-collapse-content-box > ul {
+  margin-top: 0;
+  padding-left: 22px;
+  line-height: 1.9;
+}
+
+.markdown-format-example,
+.markdown-ai-prompt {
+  max-height: 420px;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid #e1e8f2;
+  border-radius: 8px;
+  background: #f7f9fc;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.markdown-ai-prompt.ant-typography {
+  margin-bottom: 0;
+}
+
+.markdown-import-input {
+  margin-top: 18px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.markdown-import-preview {
+  margin-top: 24px;
+}
+
+.markdown-import-statistics {
+  margin-bottom: 18px;
+  padding: 14px 18px;
+  border: 1px solid #e4eaf2;
+  border-radius: 8px;
+  background: #fafcff;
+}
+
+.markdown-import-content.ant-typography {
+  margin-bottom: 0;
+  white-space: pre-wrap;
+}
+
+.markdown-import-error-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #cf1322;
+}
+
 .paper-name-link {
   height: auto;
   padding: 0;

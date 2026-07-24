@@ -487,6 +487,18 @@ V1 正式支持五种题型：
 - 按题型筛选
 - 按难度筛选
 - 启用或禁用题目
+- 按固定 Markdown 格式预览并批量导入题目
+
+### 11.1 Markdown 批量导入
+
+`admin` 和 `teacher` 可以直接粘贴 Markdown 或上传 `.md` 文件。系统只解析
+`## 题目` 起始标记以及固定中文字段，不猜测自由格式。导入必须先展示逐题预览，
+包括题目起止行、规范化结果和错误原因；用户确认后，后端重新解析并调用现有
+Question Service 五题型校验，只创建合法题目，非法题目跳过。
+
+Markdown 导入不调用任何 AI API。系统提供可复制的 AI 出题 Prompt，方便用户在
+ChatGPT、Claude、DeepSeek 等外部工具生成符合规范的文本。完整格式、五题型示例、
+代码块规则和 Prompt 见 [Markdown 题库批量导入规范](03-markdown-question-import.md)。
 
 ------
 

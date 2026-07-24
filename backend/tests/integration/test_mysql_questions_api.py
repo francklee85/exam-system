@@ -185,6 +185,67 @@ def test_mysql_question_bank_api_flow() -> None:
                     item["id"] for item in disabled_filter_response.json()["items"]
                 ]
 
+                markdown = """# MySQL Markdown 导入
+
+## 题目
+类型：填空题
+难度：简单
+### 题干
+Linux 默认超级用户是 ______。
+### 参考答案
+root
+
+## 题目
+类型：主观问答题
+难度：中等
+### 题干
+请简述容器隔离。
+### 参考答案
+容器使用 namespace 和 cgroup。
+
+## 题目
+类型：判断题
+难度：普通
+### 题干
+这道题应被跳过。
+### 正确答案
+正确
+"""
+                preview_response = await client.post(
+                    "/api/v1/questions/import/preview",
+                    headers=teacher_headers,
+                    json={"markdown": markdown},
+                )
+                import_response = await client.post(
+                    "/api/v1/questions/import",
+                    headers=teacher_headers,
+                    json={"markdown": markdown},
+                )
+                assert preview_response.status_code == 200
+                assert preview_response.json()["valid_count"] == 2
+                assert preview_response.json()["invalid_count"] == 1
+                assert import_response.status_code == 201
+                assert import_response.json()["imported_count"] == 2
+                assert import_response.json()["skipped_count"] == 1
+                imported_ids = [
+                    item["question_id"]
+                    for item in import_response.json()["items"]
+                    if item["status"] == "imported"
+                ]
+                async with AsyncSessionFactory() as verification_session:
+                    imported_questions = list(
+                        await verification_session.scalars(
+                            select(Question)
+                            .where(Question.id.in_(imported_ids))
+                            .options(selectinload(Question.options))
+                        )
+                    )
+                assert len(imported_questions) == 2
+                assert all(not question.options for question in imported_questions)
+                assert {
+                    question.reference_answer for question in imported_questions
+                } == {"root", "容器使用 namespace 和 cgroup。"}
+
                 student_response = await client.get(
                     "/api/v1/questions",
                     headers=student_headers,

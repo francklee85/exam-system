@@ -109,6 +109,13 @@ def _normalize_question(payload: QuestionCreate | QuestionUpdate) -> NormalizedQ
     )
 
 
+def validate_question_payload(
+    payload: QuestionCreate | QuestionUpdate,
+) -> NormalizedQuestion:
+    """Run the canonical five-question-type validation without writing data."""
+    return _normalize_question(payload)
+
+
 def _is_admin(user: User) -> bool:
     return "admin" in effective_role_codes(user)
 
@@ -174,6 +181,38 @@ async def create_question(
     session.add(question)
     await _commit(session)
     return await get_question(session, question.id, current_user)
+
+
+async def create_questions_batch(
+    session: AsyncSession,
+    payloads: list[QuestionCreate],
+    current_user: User,
+) -> list[Question]:
+    """Create an already-previewed batch in one transaction.
+
+    Validation is deliberately rerun here so the preview response is never
+    treated as trusted import data.
+    """
+    questions: list[Question] = []
+    for payload in payloads:
+        data = validate_question_payload(payload)
+        question = Question(
+            question_type=data.question_type,
+            content=data.content,
+            correct_answer=data.correct_answer,
+            reference_answer=data.reference_answer,
+            analysis=data.analysis,
+            difficulty=data.difficulty,
+            status=RecordStatus.ACTIVE,
+            created_by=current_user.id,
+            creator=current_user,
+        )
+        question.options = _build_options(data)
+        session.add(question)
+        questions.append(question)
+
+    await _commit(session)
+    return questions
 
 
 async def list_questions(

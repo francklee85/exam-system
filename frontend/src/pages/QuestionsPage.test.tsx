@@ -8,7 +8,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createQuestion,
   getQuestion,
+  importQuestionMarkdown,
   listQuestions,
+  previewQuestionMarkdown,
   updateQuestion,
   updateQuestionStatus,
 } from '../api/questions'
@@ -28,13 +30,17 @@ import { QuestionsPage } from './QuestionsPage'
 vi.mock('../api/questions', () => ({
   createQuestion: vi.fn(),
   getQuestion: vi.fn(),
+  importQuestionMarkdown: vi.fn(),
   listQuestions: vi.fn(),
+  previewQuestionMarkdown: vi.fn(),
   updateQuestion: vi.fn(),
   updateQuestionStatus: vi.fn(),
 }))
 
 const mockedListQuestions = vi.mocked(listQuestions)
 const mockedGetQuestion = vi.mocked(getQuestion)
+const mockedPreviewQuestionMarkdown = vi.mocked(previewQuestionMarkdown)
+const mockedImportQuestionMarkdown = vi.mocked(importQuestionMarkdown)
 const mockedCreateQuestion = vi.mocked(createQuestion)
 const mockedUpdateQuestion = vi.mocked(updateQuestion)
 const mockedUpdateQuestionStatus = vi.mocked(updateQuestionStatus)
@@ -170,6 +176,34 @@ describe('question list', () => {
     mockedCreateQuestion.mockResolvedValue(singleChoiceDetail)
     mockedUpdateQuestion.mockResolvedValue(singleChoiceDetail)
     mockedUpdateQuestionStatus.mockResolvedValue(singleChoiceDetail)
+    mockedPreviewQuestionMarkdown.mockResolvedValue({
+      total_count: 0,
+      valid_count: 0,
+      invalid_count: 0,
+      document_errors: [],
+      items: [],
+    })
+    mockedImportQuestionMarkdown.mockResolvedValue({
+      total_count: 0,
+      imported_count: 0,
+      skipped_count: 0,
+      items: [],
+    })
+  })
+
+  it('opens the Markdown import workflow from the question page', async () => {
+    const user = userEvent.setup()
+    renderQuestionsPage()
+    await screen.findByText(singleChoiceDetail.content)
+
+    await user.click(screen.getByRole('button', { name: /Markdown 导入/u }))
+
+    expect(
+      screen.getByRole('dialog', { name: /Markdown 批量导入题目/u }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByPlaceholderText('在此粘贴标准 Markdown 题库内容'),
+    ).toBeInTheDocument()
   })
 
   it('renders question data with Chinese type, difficulty, and status labels', async () => {

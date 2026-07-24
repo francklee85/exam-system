@@ -67,3 +67,43 @@ export interface QuestionListParams extends PaginationParams {
   difficulty?: Difficulty
   status?: QuestionStatus
 }
+
+export interface MarkdownImportError {
+  line: number | null
+  field: string | null
+  message: string
+}
+
+export interface MarkdownImportPreviewItem {
+  number: number
+  start_line: number
+  end_line: number
+  valid: boolean
+  question_type: QuestionType | null
+  difficulty: Difficulty | null
+  content: string | null
+  payload: QuestionCreateRequest | null
+  errors: MarkdownImportError[]
+}
+
+export interface MarkdownImportPreview {
+  total_count: number
+  valid_count: number
+  invalid_count: number
+  document_errors: MarkdownImportError[]
+  items: MarkdownImportPreviewItem[]
+}
+
+export interface MarkdownImportResultItem {
+  number: number
+  status: 'imported' | 'skipped'
+  question_id: number | null
+  errors: MarkdownImportError[]
+}
+
+export interface MarkdownImportResult {
+  total_count: number
+  imported_count: number
+  skipped_count: number
+  items: MarkdownImportResultItem[]
+}

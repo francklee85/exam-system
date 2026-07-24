@@ -1,4 +1,9 @@
-import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
+import {
+  FileMarkdownOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SearchOutlined,
+} from '@ant-design/icons'
 import {
   Alert,
   App,
@@ -20,6 +25,7 @@ import { getApiErrorMessage } from '../api/errors'
 import { listQuestions, updateQuestionStatus } from '../api/questions'
 import { StatusTag } from '../components/StatusTag'
 import { QuestionFormDrawer } from '../components/questions/QuestionFormDrawer'
+import { QuestionMarkdownImportDrawer } from '../components/questions/QuestionMarkdownImportDrawer'
 import type {
   Difficulty,
   QuestionDetail,
@@ -67,6 +73,7 @@ export function QuestionsPage() {
     page_size: DEFAULT_PAGE_SIZE,
   })
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [importDrawerOpen, setImportDrawerOpen] = useState(false)
   const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null)
   const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null)
   const requestIdRef = useRef(0)
@@ -246,17 +253,26 @@ export function QuestionsPage() {
             管理五种题型；客观题自动阅卷，填空题和主观问答题人工阅卷
           </Typography.Text>
         </div>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          data-e2e="create-question"
-          onClick={() => {
-            setEditingQuestionId(null)
-            setDrawerOpen(true)
-          }}
-        >
-          新增题目
-        </Button>
+        <Space>
+          <Button
+            icon={<FileMarkdownOutlined />}
+            data-e2e="import-question-markdown"
+            onClick={() => setImportDrawerOpen(true)}
+          >
+            Markdown 导入
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            data-e2e="create-question"
+            onClick={() => {
+              setEditingQuestionId(null)
+              setDrawerOpen(true)
+            }}
+          >
+            新增题目
+          </Button>
+        </Space>
       </div>
 
       <Card className="filter-card" size="small">
@@ -380,6 +396,17 @@ export function QuestionsPage() {
           setEditingQuestionId(null)
         }}
         onSaved={handleSaved}
+      />
+      <QuestionMarkdownImportDrawer
+        open={importDrawerOpen}
+        onClose={() => setImportDrawerOpen(false)}
+        onImported={() => {
+          if (query.page === 1) {
+            void loadQuestions()
+          } else {
+            setQuery((current) => ({ ...current, page: 1 }))
+          }
+        }}
       />
     </div>
   )

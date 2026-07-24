@@ -4,6 +4,8 @@ import type {
   QuestionDetail,
   QuestionListItem,
   QuestionListParams,
+  MarkdownImportPreview,
+  MarkdownImportResult,
   QuestionStatus,
   QuestionUpdateRequest,
 } from '../types/question'
@@ -51,6 +53,26 @@ export async function updateQuestionStatus(
   const response = await apiClient.patch<QuestionDetail>(
     `${QUESTIONS_PATH}/${questionId}/status`,
     { status },
+  )
+  return response.data
+}
+
+export async function previewQuestionMarkdown(
+  markdown: string,
+): Promise<MarkdownImportPreview> {
+  const response = await apiClient.post<MarkdownImportPreview>(
+    `${QUESTIONS_PATH}/import/preview`,
+    { markdown },
+  )
+  return response.data
+}
+
+export async function importQuestionMarkdown(
+  markdown: string,
+): Promise<MarkdownImportResult> {
+  const response = await apiClient.post<MarkdownImportResult>(
+    `${QUESTIONS_PATH}/import`,
+    { markdown },
   )
   return response.data
 }

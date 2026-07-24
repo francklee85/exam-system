@@ -8,7 +8,12 @@ from app.modules.auth.dependencies import SessionDependency
 from app.modules.auth.permissions import TeacherOrAdmin
 from app.modules.questions import service
 from app.modules.questions.enums import QuestionDifficulty, QuestionType
+from app.modules.questions.markdown_import import preview_markdown_import
 from app.modules.questions.schemas import (
+    MarkdownImportPreviewResponse,
+    MarkdownImportRequest,
+    MarkdownImportResponse,
+    MarkdownImportResultItem,
     QuestionCreate,
     QuestionListItem,
     QuestionResponse,
@@ -44,6 +49,53 @@ async def list_questions(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.post(
+    "/import/preview",
+    response_model=MarkdownImportPreviewResponse,
+)
+async def preview_question_markdown_import(
+    payload: MarkdownImportRequest,
+    current_user: TeacherOrAdmin,
+) -> MarkdownImportPreviewResponse:
+    del current_user
+    return preview_markdown_import(payload.markdown)
+
+
+@router.post(
+    "/import",
+    response_model=MarkdownImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_question_markdown(
+    payload: MarkdownImportRequest,
+    session: SessionDependency,
+    current_user: TeacherOrAdmin,
+) -> MarkdownImportResponse:
+    preview = preview_markdown_import(payload.markdown)
+    valid_items = [item for item in preview.items if item.valid and item.payload is not None]
+    questions = await service.create_questions_batch(
+        session,
+        [item.payload for item in valid_items],
+        current_user,
+    )
+    imported_ids = iter(question.id for question in questions)
+    result_items = [
+        MarkdownImportResultItem(
+            number=item.number,
+            status="imported" if item.valid else "skipped",
+            question_id=next(imported_ids) if item.valid else None,
+            errors=item.errors,
+        )
+        for item in preview.items
+    ]
+    return MarkdownImportResponse(
+        total_count=preview.total_count,
+        imported_count=len(questions),
+        skipped_count=preview.invalid_count,
+        items=result_items,
     )
 
 

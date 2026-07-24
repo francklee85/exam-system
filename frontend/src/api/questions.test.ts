@@ -7,7 +7,9 @@ import { apiClient } from './http'
 import {
   createQuestion,
   getQuestion,
+  importQuestionMarkdown,
   listQuestions,
+  previewQuestionMarkdown,
   updateQuestion,
   updateQuestionStatus,
 } from './questions'
@@ -87,5 +89,41 @@ describe('question API module', () => {
 
     expect(result.status).toBe('disabled')
     expect(mockApi.history.delete).toHaveLength(0)
+  })
+
+  it('previews Markdown through the shared client', async () => {
+    mockApi.onPost('/api/v1/questions/import/preview', { markdown: '# 题库' }).reply(
+      200,
+      {
+        total_count: 0,
+        valid_count: 0,
+        invalid_count: 0,
+        document_errors: [{ line: 1, field: null, message: '未找到题目' }],
+        items: [],
+      },
+    )
+
+    const result = await previewQuestionMarkdown('# 题库')
+
+    expect(result.document_errors[0]?.line).toBe(1)
+  })
+
+  it('confirms Markdown import through the shared client', async () => {
+    mockApi.onPost('/api/v1/questions/import', { markdown: '## 题目' }).reply(
+      201,
+      {
+        total_count: 1,
+        imported_count: 1,
+        skipped_count: 0,
+        items: [
+          { number: 1, status: 'imported', question_id: 200, errors: [] },
+        ],
+      },
+    )
+
+    const result = await importQuestionMarkdown('## 题目')
+
+    expect(result.imported_count).toBe(1)
+    expect(result.items[0]?.question_id).toBe(200)
   })
 })

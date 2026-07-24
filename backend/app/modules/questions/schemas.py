@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 
@@ -94,3 +95,56 @@ class QuestionResponse(QuestionListItem):
     correct_answer: list[str] | None
     reference_answer: str | None
     analysis: str | None
+
+
+class MarkdownImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    markdown: str = Field(min_length=1, max_length=1_000_000)
+
+    @field_validator("markdown")
+    @classmethod
+    def reject_blank_markdown(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Markdown 内容不能为空")
+        return value
+
+
+class MarkdownImportError(BaseModel):
+    line: int | None = None
+    field: str | None = None
+    message: str
+
+
+class MarkdownImportPreviewItem(BaseModel):
+    number: int
+    start_line: int
+    end_line: int
+    valid: bool
+    question_type: QuestionType | None = None
+    difficulty: QuestionDifficulty | None = None
+    content: str | None = None
+    payload: QuestionCreate | None = None
+    errors: list[MarkdownImportError] = Field(default_factory=list)
+
+
+class MarkdownImportPreviewResponse(BaseModel):
+    total_count: int
+    valid_count: int
+    invalid_count: int
+    document_errors: list[MarkdownImportError] = Field(default_factory=list)
+    items: list[MarkdownImportPreviewItem]
+
+
+class MarkdownImportResultItem(BaseModel):
+    number: int
+    status: Literal["imported", "skipped"]
+    question_id: int | None = None
+    errors: list[MarkdownImportError] = Field(default_factory=list)
+
+
+class MarkdownImportResponse(BaseModel):
+    total_count: int
+    imported_count: int
+    skipped_count: int
+    items: list[MarkdownImportResultItem]
