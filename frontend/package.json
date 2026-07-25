@@ -13,6 +13,7 @@
     "test:e2e:user-management": "node scripts/user-management-browser-smoke.mjs",
     "test:e2e:questions": "node scripts/questions-browser-smoke.mjs",
     "test:e2e:question-import": "node scripts/question-markdown-import-browser-smoke.mjs",
+    "test:e2e:dashboard": "node scripts/dashboard-browser-smoke.mjs",
     "test:e2e:papers": "node scripts/papers-browser-smoke.mjs",
     "test:e2e:exams": "node scripts/exams-browser-smoke.mjs",
     "preview": "vite preview"
