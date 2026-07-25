@@ -1,32 +1,81 @@
+import { Suspense, lazy, type ReactNode } from 'react'
 import { Navigate, createBrowserRouter } from 'react-router-dom'
 
+import { FullPageLoading } from '../components/FullPageLoading'
 import { ProtectedRoute } from '../components/ProtectedRoute'
 import { PublicOnlyRoute } from '../components/PublicOnlyRoute'
 import { RoleRoute } from '../components/RoleRoute'
 import { AppLayout } from '../layouts/AppLayout'
 import { ComingSoonPage } from '../pages/ComingSoonPage'
-import { ClassesPage } from '../pages/ClassesPage'
-import { DashboardPage } from '../pages/DashboardPage'
-import { ExamDetailPage } from '../pages/ExamDetailPage'
-import { ExamResultsPage } from '../pages/ExamResultsPage'
-import { ExamsPage } from '../pages/ExamsPage'
-import { ForbiddenPage } from '../pages/ForbiddenPage'
-import { GradingDetailPage } from '../pages/GradingDetailPage'
-import { GradingTasksPage } from '../pages/GradingTasksPage'
-import { LoginPage } from '../pages/LoginPage'
-import { MajorsPage } from '../pages/MajorsPage'
-import { MyExamDetailPage } from '../pages/MyExamDetailPage'
-import { MyExamsPage } from '../pages/MyExamsPage'
-import { MyResultsPage } from '../pages/MyResultsPage'
-import { NotFoundPage } from '../pages/NotFoundPage'
-import { OnlineExamPage } from '../pages/OnlineExamPage'
-import { PaperDetailPage } from '../pages/PaperDetailPage'
-import { PapersPage } from '../pages/PapersPage'
-import { QuestionsPage } from '../pages/QuestionsPage'
-import { StudentsPage } from '../pages/StudentsPage'
-import { TeachersPage } from '../pages/TeachersPage'
-import { UsersPage } from '../pages/UsersPage'
 import { navigationItems } from './navigation'
+
+const ClassesPage = lazy(() =>
+  import('../pages/ClassesPage').then((module) => ({ default: module.ClassesPage })),
+)
+const DashboardPage = lazy(() =>
+  import('../pages/DashboardPage').then((module) => ({ default: module.DashboardPage })),
+)
+const ExamDetailPage = lazy(() =>
+  import('../pages/ExamDetailPage').then((module) => ({ default: module.ExamDetailPage })),
+)
+const ExamResultsPage = lazy(() =>
+  import('../pages/ExamResultsPage').then((module) => ({ default: module.ExamResultsPage })),
+)
+const ExamsPage = lazy(() =>
+  import('../pages/ExamsPage').then((module) => ({ default: module.ExamsPage })),
+)
+const ForbiddenPage = lazy(() =>
+  import('../pages/ForbiddenPage').then((module) => ({ default: module.ForbiddenPage })),
+)
+const GradingDetailPage = lazy(() =>
+  import('../pages/GradingDetailPage').then((module) => ({ default: module.GradingDetailPage })),
+)
+const GradingTasksPage = lazy(() =>
+  import('../pages/GradingTasksPage').then((module) => ({ default: module.GradingTasksPage })),
+)
+const LoginPage = lazy(() =>
+  import('../pages/LoginPage').then((module) => ({ default: module.LoginPage })),
+)
+const MajorsPage = lazy(() =>
+  import('../pages/MajorsPage').then((module) => ({ default: module.MajorsPage })),
+)
+const MyExamDetailPage = lazy(() =>
+  import('../pages/MyExamDetailPage').then((module) => ({ default: module.MyExamDetailPage })),
+)
+const MyExamsPage = lazy(() =>
+  import('../pages/MyExamsPage').then((module) => ({ default: module.MyExamsPage })),
+)
+const MyResultsPage = lazy(() =>
+  import('../pages/MyResultsPage').then((module) => ({ default: module.MyResultsPage })),
+)
+const NotFoundPage = lazy(() =>
+  import('../pages/NotFoundPage').then((module) => ({ default: module.NotFoundPage })),
+)
+const OnlineExamPage = lazy(() =>
+  import('../pages/OnlineExamPage').then((module) => ({ default: module.OnlineExamPage })),
+)
+const PaperDetailPage = lazy(() =>
+  import('../pages/PaperDetailPage').then((module) => ({ default: module.PaperDetailPage })),
+)
+const PapersPage = lazy(() =>
+  import('../pages/PapersPage').then((module) => ({ default: module.PapersPage })),
+)
+const QuestionsPage = lazy(() =>
+  import('../pages/QuestionsPage').then((module) => ({ default: module.QuestionsPage })),
+)
+const StudentsPage = lazy(() =>
+  import('../pages/StudentsPage').then((module) => ({ default: module.StudentsPage })),
+)
+const TeachersPage = lazy(() =>
+  import('../pages/TeachersPage').then((module) => ({ default: module.TeachersPage })),
+)
+const UsersPage = lazy(() =>
+  import('../pages/UsersPage').then((module) => ({ default: module.UsersPage })),
+)
+
+function withLoading(element: ReactNode) {
+  return <Suspense fallback={<FullPageLoading />}>{element}</Suspense>
+}
 
 const placeholderRoutes = navigationItems
   .filter(
@@ -60,7 +109,7 @@ export const router = createBrowserRouter([
     path: '/login',
     element: (
       <PublicOnlyRoute>
-        <LoginPage />
+        {withLoading(<LoginPage />)}
       </PublicOnlyRoute>
     ),
   },
@@ -68,7 +117,7 @@ export const router = createBrowserRouter([
     element: <ProtectedRoute />,
     children: [
       {
-        element: <AppLayout />,
+        element: withLoading(<AppLayout />),
         children: [
           {
             path: '/',
@@ -219,12 +268,12 @@ export const router = createBrowserRouter([
       },
       {
         path: '/403',
-        element: <ForbiddenPage />,
+        element: withLoading(<ForbiddenPage />),
       },
     ],
   },
   {
     path: '*',
-    element: <NotFoundPage />,
+    element: withLoading(<NotFoundPage />),
   },
 ])

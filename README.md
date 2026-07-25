@@ -1,160 +1,118 @@
-# 在线考试系统
+# 在线考试系统 V1.0
 
-在线考试系统 V1。当前阶段包含前后端项目骨架、数据库连接基础设施、
-身份与组织基础数据模型、首个 Alembic Migration、基础数据 Seed、JWT 登录认证
-和健康检查。尚未实现 CRUD API、题库、试卷、考试、作答或成绩等业务功能。
+面向职业教育场景的在线考试系统，覆盖组织与账号管理、五种题型题库、Markdown 批量
+导题、人工组卷、考试发布快照、学生在线作答、自动保存、客观题自动评分、人工题阅卷
+和最终成绩查询。
 
 ## 技术栈
 
-- 后端：Python 3.12、FastAPI、SQLAlchemy 2.x、Pydantic v2、Alembic
-- 认证：Argon2 密码哈希、JWT Bearer Token
-- 前端：React、Vite、TypeScript、Ant Design、React Router、Axios、Zustand
-- 数据库：MySQL 8
-- 权限规划：JWT 登录基础已完成，RBAC 接口权限控制待后续实现
-- 部署方向：Docker Compose + Nginx
+- Backend：Python 3.12、FastAPI、SQLAlchemy 2.x、Pydantic v2、Alembic
+- Database：MySQL 8.4、utf8mb4
+- Frontend：React 18、TypeScript、Vite、Ant Design、React Router、Axios、Zustand
+- Security：JWT、Argon2、RBAC（admin / teacher / student）
+- Deployment：Docker Compose、Nginx
 
-## 项目结构
+## 核心功能
 
-```text
-.
-├── backend/
-│   ├── alembic/            # 数据库迁移环境与版本脚本
-│   ├── app/
-│   │   ├── api/            # HTTP 路由
-│   │   ├── core/           # 配置等横切能力
-│   │   ├── db/             # SQLAlchemy Base、引擎和会话
-│   │   ├── modules/        # 按领域划分的模型与后续业务模块
-│   │   └── scripts/        # Seed 等维护脚本
-│   └── tests/
-├── frontend/
-│   └── src/
-│       ├── api/            # Axios 客户端和后续 API 封装
-│       ├── app/            # 应用级配置和路由
-│       ├── components/     # 通用组件
-│       ├── hooks/          # 通用 Hooks
-│       ├── layouts/        # 页面布局
-│       ├── pages/          # 路由页面
-│       ├── stores/         # Zustand 状态
-│       ├── styles/         # 全局样式
-│       └── types/          # 共享 TypeScript 类型
-├── docs/
-├── .env.example
-└── docker-compose.yml
-```
+- 专业、班级、教师、学生与用户状态管理
+- 单选、多选、判断、填空、主观问答五种题型
+- 固定格式 Markdown 粘贴/文件上传、逐题预览与合法题批量导入
+- 试卷人工组卷、分值、顺序、总分和生命周期
+- all / major / class 考试对象与不可变 ExamQuestion Snapshot
+- 学生开始考试、唯一 Attempt、deadline、五题型作答、自动保存与刷新恢复
+- 主动/超时交卷，三种客观题自动评分，两种人工题教师阅卷
+- 学生个人成绩、教师考试成绩与权限隔离
 
-## 环境要求
+## 生产式快速启动
 
-- Python 3.12
-- Node.js 20+
-- Docker 与 Docker Compose
-
-## 本地启动
-
-### 1. 准备环境变量和 MySQL
+只需要 Docker Engine 和 Docker Compose v2，不依赖宿主机 Python、Node、MySQL、
+`.venv` 或 `node_modules`。
 
 ```bash
 cp .env.example .env
 ```
 
-`.env.example` 中只有开发占位密码。首次启动前请仅在本地 `.env` 中修改
-`MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`，并同步更新 `DATABASE_URL` 中的密码。
-`.env` 已被 Git 忽略。
-
-`JWT_SECRET_KEY` 和 `INITIAL_ADMIN_PASSWORD` 的示例值只能用于本地开发。
-部署到其他环境前必须替换为独立的高强度值。
+修改 `.env` 中所有 `CHANGE_ME` 值后执行：
 
 ```bash
-docker compose up -d mysql
+docker compose config
+docker compose up -d --build --wait
 docker compose ps
 ```
 
-### 2. 启动后端
+访问 `http://localhost/`（若设置 `APP_PORT=8080`，则访问 `http://localhost:8080/`）。
+Frontend Nginx 是唯一浏览器入口，React 静态资源和 `/api` 均同源访问。Backend 启动
+前等待 MySQL healthy，随后自动执行全部 Alembic Migration 和幂等 Seed。
+
+停止但保留数据：
+
+```bash
+docker compose down
+```
+
+清空环境（会删除数据库卷，仅用于明确的测试场景）：
+
+```bash
+docker compose down -v
+```
+
+详细的首次部署、升级、日志、Migration、Seed、备份与恢复步骤见
+[部署与运维文档](docs/04-deployment.md)。
+
+## 项目结构
+
+```text
+backend/              FastAPI、领域 Service、ORM、Alembic 与测试
+frontend/             React 应用、Nginx 配置、浏览器 E2E 与单元测试
+docs/                 需求、数据库、Markdown 导入、部署与验收文档
+scripts/              MySQL 备份/恢复脚本
+docker-compose.yml    mysql + backend + frontend
+.env.example          无真实凭证的部署变量模板
+```
+
+## 开发与验证
+
+Backend：
 
 ```bash
 cd backend
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-alembic upgrade head
-python -m app.scripts.seed
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+ruff check app tests alembic/env.py
+pytest -q
+alembic check
 ```
 
-访问 <http://localhost:8000/health>，预期返回：
-
-```json
-{"status":"ok"}
-```
-
-交互式 API 文档位于 <http://localhost:8000/docs>。
-
-认证接口：
-
-- `POST /api/v1/auth/login`
-- `GET /api/v1/auth/me`
-
-### 3. 启动前端
-
-打开另一个终端：
+Frontend：
 
 ```bash
 cd frontend
-npm install
+npm ci
+npm run lint
+npm run test
+npm run build
 npm run dev
 ```
 
-访问 <http://localhost:5173>。
+Vite 开发服务器将相对 `/api` 代理到 `http://localhost:8000`；生产构建不硬编码
+`localhost:8000`。
 
-## 基础验证
+## 安全提示
 
-后端：
+- 不要提交 `.env`、SQL 备份或真实账号密码。
+- 生产启动拒绝示例 JWT Secret 和管理员密码，数据库业务连接使用非 root 用户。
+- 学生考试 API 使用独立安全 Schema，不返回 `correct_answer`、`reference_answer`
+  或 `analysis`。
+- Markdown 当前按纯文本展示，不使用 `dangerouslySetInnerHTML` 执行用户 HTML。
+- Docker volume 不是备份；使用 `scripts/backup-db.sh` 并将备份复制到外部存储。
 
-```bash
-cd backend
-source .venv/bin/activate
-pytest -q
-ruff check app tests alembic/env.py
-alembic heads
-```
+## 文档
 
-前端：
+- [需求文档](docs/01-requirements.md)
+- [数据库设计](docs/02-database-design.md)
+- [Markdown 题库导入规范](docs/03-markdown-question-import.md)
+- [部署与运维](docs/04-deployment.md)
+- [V1.1 候选路线](docs/05-v1.1-roadmap.md)
 
-```bash
-cd frontend
-npm run lint
-npm run build
-```
-
-Compose 配置：
-
-```bash
-docker compose --env-file .env.example config
-```
-
-## 数据库迁移约定
-
-所有数据库结构变更都必须通过 Alembic 管理。新增模型后，在 `backend` 目录执行：
-
-```bash
-alembic revision --autogenerate -m "describe change"
-alembic upgrade head
-```
-
-当前首个 revision 为 `3c899a842c89`，只创建：`users`、`roles`、
-`user_roles`、`majors`、`classes`、`student_profiles`。
-
-## 初始化基础数据
-
-数据库迁移完成后，在 `backend` 目录执行：
-
-```bash
-python -m app.scripts.seed
-```
-
-该命令按角色或专业的 `code` 查询并补齐数据，不依赖固定 ID，可重复执行。
-它会创建或恢复为启用状态的默认角色 `admin`、`teacher`、`student`，以及专业
-`CLOUD`、`AI_MEDIA`、`AIGC`、`NETOPS`。
-
-当环境变量 `INITIAL_ADMIN_USERNAME` 和 `INITIAL_ADMIN_PASSWORD` 同时存在时，
-Seed 还会创建对应管理员并按角色 `code=admin` 建立关联。如果同名用户已存在，
-Seed 不会覆盖其密码，只会补齐缺失的 admin 角色。Seed 不在应用启动时自动运行。
+最终发布验收结果记录在 `docs/06-v1-acceptance-report.md`。

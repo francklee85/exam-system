@@ -173,6 +173,34 @@ describe('five question types and per-question autosave', () => {
     )
   })
 
+  it('does not reuse a selected radio state when moving to a multi-select question', async () => {
+    const user = userEvent.setup()
+    renderAttempt()
+    await screen.findByText('第 1 题')
+    await user.click(screen.getByRole('radio', { name: /A.*pwd/u }))
+    await waitFor(() =>
+      expect(mockedSaveAnswer).toHaveBeenCalledWith(
+        2001,
+        3001,
+        { answer: ['A'] },
+        expect.any(AbortSignal),
+      ),
+    )
+
+    await user.click(screen.getByRole('button', { name: '下一题' }))
+    await screen.findByText('第 2 题')
+    await user.click(screen.getByRole('checkbox', { name: /A.*ext4/u }))
+
+    await waitFor(() =>
+      expect(mockedSaveAnswer).toHaveBeenCalledWith(
+        2001,
+        3002,
+        { answer: ['A'] },
+        expect.any(AbortSignal),
+      ),
+    )
+  })
+
   it('shows Chinese true/false labels and saves the canonical value', async () => {
     const user = await moveToQuestion(3)
     await user.click(screen.getByRole('radio', { name: '正确' }))
