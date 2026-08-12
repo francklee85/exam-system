@@ -74,8 +74,7 @@ input {
   z-index: 1;
 }
 
-.login-eyebrow,
-.dashboard-kicker {
+.login-eyebrow {
   color: #1677ff;
   font-size: 12px;
   font-weight: 700;
@@ -207,27 +206,49 @@ input {
 }
 
 .dashboard-welcome .ant-typography {
-  margin-top: 8px;
+  margin: 0 0 12px;
 }
 
-.dashboard-section-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin: 30px 0 14px;
+.dashboard-section-title.ant-typography {
+  margin: 28px 0 14px;
 }
 
-.dashboard-section-heading .ant-typography {
-  margin: 0;
-}
-
-.capability-card {
+.dashboard-stat-card {
   height: 100%;
   border-color: #e4eaf2;
 }
 
-.capability-card .ant-card-head {
+.dashboard-stat-card-link {
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.dashboard-stat-card-link:hover,
+.dashboard-stat-card-link:focus-visible {
+  border-color: #91caff;
+  box-shadow: 0 8px 22px rgb(22 119 255 / 10%);
+  outline: none;
+}
+
+.dashboard-content-row {
+  margin-top: 18px;
+}
+
+.dashboard-panel {
+  height: 100%;
+  border-color: #e4eaf2;
+}
+
+.dashboard-panel .ant-card-head {
   border-bottom-color: #edf1f6;
+}
+
+.dashboard-time-range {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .management-page {

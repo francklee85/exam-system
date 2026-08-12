@@ -217,8 +217,8 @@ try {
       const token = window.localStorage.getItem('exam-system.access-token')
       const headers = { Authorization: `Bearer ${token}` }
       const [majorResponse, classResponse] = await Promise.all([
-        fetch(`http://localhost:8000/api/v1/majors/${majorId}`, { headers }),
-        fetch(`http://localhost:8000/api/v1/classes/${classId}`, { headers }),
+        fetch(`/api/v1/majors/${majorId}`, { headers }),
+        fetch(`/api/v1/classes/${classId}`, { headers }),
       ])
       return {
         major: await majorResponse.json(),
@@ -314,7 +314,7 @@ async function disableRetainedTestData(page, classInfo, major) {
         if (id === undefined) {
           return
         }
-        await fetch(`http://localhost:8000/api/v1/${resource}/${id}/status`, {
+        await fetch(`/api/v1/${resource}/${id}/status`, {
           method: 'PATCH',
           headers,
           body: JSON.stringify({ status: 'disabled' }),

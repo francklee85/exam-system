@@ -851,26 +851,45 @@ async function disableAccounts(page) {
 async function selectOption(page, selector, label) {
   await page.click(selector)
   await page.waitForFunction(
-    (expected) =>
-      [...document.querySelectorAll('.ant-select-item-option-content')].some(
+    (expected) => {
+      const normalize = (value) =>
+        value
+          ?.replace(/\s/gu, '')
+          .replaceAll('（', '(')
+          .replaceAll('）', ')')
+      return [...document.querySelectorAll('.ant-select-item-option-content')].some(
         (option) =>
-          option.textContent?.trim() === expected &&
+          normalize(option.textContent) === normalize(expected) &&
           option.closest('.ant-select-dropdown')?.getBoundingClientRect().width > 0,
-      ),
+      )
+    },
     {},
     label,
   )
   await page.evaluate((expected) => {
+    const normalize = (value) =>
+      value
+        ?.replace(/\s/gu, '')
+        .replaceAll('（', '(')
+        .replaceAll('）', ')')
     const option = [...document.querySelectorAll('.ant-select-item-option-content')].find(
       (candidate) =>
-        candidate.textContent?.trim() === expected &&
+        normalize(candidate.textContent) === normalize(expected) &&
         candidate.closest('.ant-select-dropdown')?.getBoundingClientRect().width > 0,
     )
     option?.parentElement?.click()
   }, label)
   await page.waitForFunction(
-    (selectSelector, expected) =>
-      document.querySelector(selectSelector)?.textContent?.includes(expected),
+    (selectSelector, expected) => {
+      const normalize = (value) =>
+        value
+          ?.replace(/\s/gu, '')
+          .replaceAll('（', '(')
+          .replaceAll('）', ')')
+      return normalize(document.querySelector(selectSelector)?.textContent)?.includes(
+        normalize(expected),
+      )
+    },
     {},
     selector,
     label,
@@ -912,17 +931,21 @@ async function selectStudentOption(page, questionId, value) {
       candidate.request().method() === 'PUT' &&
       candidate.status() === 200,
   )
-  await page.evaluate(
+  await page.click(
+    `[data-e2e="answer-${questionId}"] input[value="${value}"]`,
+  )
+  await response
+  await page.waitForFunction(
     ({ id, selectedValue }) => {
       const group = document.querySelector(`[data-e2e="answer-${id}"]`)
       const control = [...(group?.querySelectorAll('input') ?? [])].find(
         (candidate) => candidate.value === selectedValue,
       )
-      control?.closest('label')?.click()
+      return control?.checked === true
     },
+    {},
     { id: questionId, selectedValue: value },
   )
-  await response
 }
 
 async function typeStudentAnswer(

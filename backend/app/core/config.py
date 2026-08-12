@@ -34,6 +34,20 @@ class Settings(BaseSettings):
             raise ValueError(
                 "INITIAL_ADMIN_USERNAME and INITIAL_ADMIN_PASSWORD must be set together"
             )
+
+        if self.environment == "production":
+            if self.debug:
+                raise ValueError("DEBUG must be false in production")
+
+            jwt_secret = self.jwt_secret_key.get_secret_value().lower()
+            weak_markers = ("change-this", "change_me", "changeme", "replace-with", "dev-only")
+            if any(marker in jwt_secret for marker in weak_markers):
+                raise ValueError("JWT_SECRET_KEY must be replaced for production")
+
+            if self.initial_admin_password is not None:
+                admin_password = self.initial_admin_password.get_secret_value().lower()
+                if any(marker in admin_password for marker in weak_markers):
+                    raise ValueError("INITIAL_ADMIN_PASSWORD must be replaced for production")
         return self
 
 

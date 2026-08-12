@@ -1,28 +1,55 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# System
+.DS_Store
+Thumbs.db
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+
+# Java
+target/
+*.class
+*.jar
+*.war
+logs/
+*.log
+
+# Node
+node_modules/
+dist/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
 # Python
 __pycache__/
 *.pyc
 .venv/
 venv/
 
-# Node
-node_modules/
-dist/
+# Uploads and runtime data
+uploads/
+upload/
+tmp/
+temp/
 
-# Environment
-.env
-.env.*
-!.env.example
+# Database and backup
+*.sql
+*.dump
+*.bak
 
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Tool caches
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-.coverage
+# Local configuration
+application-local.yml
+application-local.yaml
+application-local.properties

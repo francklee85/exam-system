@@ -69,6 +69,11 @@ try {
   await page.click('button[type="submit"]')
   await Promise.all([loginResponse, currentUserResponse])
   await page.waitForFunction(() => window.location.pathname === '/dashboard')
+  await page.waitForFunction(
+    () =>
+      document.body.textContent?.includes('欢迎，系统管理员') === true &&
+      document.body.textContent?.includes('用户管理') === true,
+  )
 
   results.login = true
   results.dashboard = await page.evaluate(

@@ -555,6 +555,7 @@ export function OnlineExamPage() {
           extra={`${currentQuestion.score} 分`}
         >
           <StudentQuestionRenderer
+            key={currentQuestion.exam_question_id}
             question={currentQuestion}
             answer={answers[currentQuestion.exam_question_id] ?? null}
             disabled={isLocked}

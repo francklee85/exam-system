@@ -12,7 +12,7 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title=settings.app_name,
         debug=settings.debug,
-        version="0.1.0",
+        version="1.0.0",
     )
 
     application.add_middleware(
